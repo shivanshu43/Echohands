@@ -1,0 +1,51 @@
+# =========================
+# Python cache
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+
+# =========================
+# Virtual environments
+# =========================
+venv/
+.venv/
+
+# =========================
+# Environment variables
+# =========================
+.env
+
+# =========================
+# Trained models
+# Distributed separately through Docker Hub
+# =========================
+models/
+
+# =========================
+# =========================
+# Temporary / backup folders
+# =========================
+models_backup/
+docker-model-test/
+
+# =========================
+# VS Code
+# =========================
+.vscode/
+
+# =========================
+# Jupyter
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# Output folders
+# =========================
+outputs/
+
+# =========================
+# OS files
+# =========================
+Thumbs.db
+.DS_Store

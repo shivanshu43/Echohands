@@ -1,0 +1,33 @@
+# Git
+.git
+.gitignore
+
+# Virtual environments
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Development and temporary files
+archive/
+tests/
+test/
+data/
+
+# Temporary project inspection files
+*_structure.txt
+root_files.txt
+
+# Editor files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Alpha-specific assets
+Assets/alpha build banner.png
