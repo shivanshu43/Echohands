@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import numpy as np
 import tensorflow as tf
 
@@ -7,6 +5,7 @@ import tensorflow as tf
 class DynamicPredictor:
 
     TARGET_FRAMES = 40
+
     FEATURES_PER_FRAME = 70
 
     def __init__(
@@ -15,22 +14,32 @@ class DynamicPredictor:
         encoder_path,
     ):
 
-        self.model_path = Path(
-            model_path
+        self.model_path = model_path
+
+        self.encoder_path = encoder_path
+
+        # ==================================================
+        # Load dynamic LSTM model
+        # ==================================================
+
+        self.model = (
+            tf.keras.models.load_model(
+                self.model_path
+            )
         )
 
-        self.encoder_path = Path(
-            encoder_path
-        )
-
-        self.model = tf.keras.models.load_model(
-            self.model_path
-        )
+        # ==================================================
+        # Load dynamic label encoder
+        # ==================================================
 
         self.classes = np.load(
             self.encoder_path,
             allow_pickle=True
         )
+
+    # ======================================================
+    # Resample sequence
+    # ======================================================
 
     def _resample_sequence(
         self,
@@ -86,6 +95,10 @@ class DynamicPredictor:
 
         return resampled
 
+    # ======================================================
+    # Prediction
+    # ======================================================
+
     def predict(
         self,
         sequence
@@ -117,12 +130,17 @@ class DynamicPredictor:
                 f"Expected "
                 f"{self.FEATURES_PER_FRAME} "
                 f"features per frame, "
-                f"got {sequence.shape[1]}."
+                f"got "
+                f"{sequence.shape[1]}."
             )
 
         if sequence.shape[0] < 2:
 
             return None, 0.0
+
+        # ==================================================
+        # Normalize sequence length
+        # ==================================================
 
         sequence = (
             self._resample_sequence(
@@ -130,11 +148,19 @@ class DynamicPredictor:
             )
         )
 
+        # ==================================================
+        # Add batch dimension
+        # ==================================================
+
         sequence = sequence.reshape(
             1,
             self.TARGET_FRAMES,
             self.FEATURES_PER_FRAME
         )
+
+        # ==================================================
+        # LSTM prediction
+        # ==================================================
 
         prediction = (
             self.model.predict(
@@ -143,8 +169,10 @@ class DynamicPredictor:
             )
         )
 
-        predicted_index = np.argmax(
-            prediction[0]
+        predicted_index = int(
+            np.argmax(
+                prediction[0]
+            )
         )
 
         predicted_class = (
@@ -154,7 +182,9 @@ class DynamicPredictor:
         )
 
         confidence = float(
-            prediction[0][
+            prediction[
+                0
+            ][
                 predicted_index
             ]
         )

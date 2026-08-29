@@ -1,29 +1,23 @@
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
+
 import os
 import json
 import hashlib
 import re
 import urllib.parse
 import urllib.request
-import shutil
+import time
+from datetime import datetime, timezone
 
 
 APP_NAME = "EchoHands"
 
-MODEL_CACHE_EXPIRATION_DAYS = 90
-
 
 # ==========================================================
-# CACHE PATHS
+# Cache
 # ==========================================================
-
 
 def get_cache_root() -> Path:
-    """
-    Return the platform-appropriate local cache directory
-    for EchoHands.
-    """
 
     if os.name == "nt":
 
@@ -52,9 +46,7 @@ def get_cache_root() -> Path:
 
 def ensure_cache_root() -> Path:
 
-    cache_root = (
-        get_cache_root()
-    )
+    cache_root = get_cache_root()
 
     cache_root.mkdir(
         parents=True,
@@ -80,21 +72,6 @@ def get_cache_state_path() -> Path:
         get_cache_root()
         / "cache_state.json"
     )
-
-
-def get_version_metadata_path(
-    version: str
-) -> Path:
-
-    return (
-        get_version_dir(version)
-        / "cache_metadata.json"
-    )
-
-
-# ==========================================================
-# CACHE STATE
-# ==========================================================
 
 
 def load_cache_state() -> dict:
@@ -150,198 +127,8 @@ def save_cache_state(
 
 
 # ==========================================================
-# VERSION METADATA
+# Manifest
 # ==========================================================
-
-
-def save_version_metadata(
-    version: str,
-    installed_at: str
-) -> None:
-
-    version_dir = (
-        get_version_dir(version)
-    )
-
-    version_dir.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    metadata_path = (
-        version_dir
-        / "cache_metadata.json"
-    )
-
-    metadata = {
-        "version": version,
-        "installed_at": installed_at,
-    }
-
-    with metadata_path.open(
-        "w",
-        encoding="utf-8"
-    ) as file:
-
-        json.dump(
-            metadata,
-            file,
-            indent=4
-        )
-
-
-def load_version_metadata(
-    version: str
-) -> dict:
-
-    metadata_path = (
-        get_version_metadata_path(
-            version
-        )
-    )
-
-    if not metadata_path.exists():
-
-        return {}
-
-    try:
-
-        with metadata_path.open(
-            "r",
-            encoding="utf-8"
-        ) as file:
-
-            return json.load(file)
-
-    except (
-        json.JSONDecodeError,
-        OSError
-    ):
-
-        return {}
-
-
-# ==========================================================
-# CACHE EXPIRATION
-# ==========================================================
-
-
-def is_cache_expired(
-    version: str
-) -> bool:
-
-    metadata = (
-        load_version_metadata(
-            version
-        )
-    )
-
-    installed_at = (
-        metadata.get(
-            "installed_at"
-        )
-    )
-
-    if not installed_at:
-
-        return True
-
-    try:
-
-        installed_time = (
-            datetime.fromisoformat(
-                installed_at
-            )
-        )
-
-    except ValueError:
-
-        return True
-
-    if installed_time.tzinfo is None:
-
-        installed_time = (
-            installed_time.replace(
-                tzinfo=timezone.utc
-            )
-        )
-
-    expiration_time = (
-        installed_time
-        + timedelta(
-            days=MODEL_CACHE_EXPIRATION_DAYS
-        )
-    )
-
-    return (
-        datetime.now(timezone.utc)
-        >= expiration_time
-    )
-
-
-# ==========================================================
-# CLEANUP
-# ==========================================================
-
-
-def cleanup_expired_models(
-    active_version=None
-) -> None:
-
-    cache_root = (
-        get_cache_root()
-    )
-
-    if not cache_root.exists():
-
-        return
-
-    for version_dir in (
-        cache_root.iterdir()
-    ):
-
-        if not version_dir.is_dir():
-
-            continue
-
-        version = (
-            version_dir.name
-        )
-
-        if (
-            active_version is not None
-            and version == active_version
-        ):
-
-            continue
-
-        if is_cache_expired(
-            version
-        ):
-
-            print(
-                f"Removing expired model cache: "
-                f"{version}"
-            )
-
-            try:
-
-                shutil.rmtree(
-                    version_dir
-                )
-
-            except OSError as error:
-
-                print(
-                    f"Warning: failed to remove "
-                    f"cache {version}: {error}"
-                )
-
-
-# ==========================================================
-# MANIFEST
-# ==========================================================
-
 
 def load_manifest(
     manifest_path: Path
@@ -361,9 +148,7 @@ def load_manifest(
             encoding="utf-8"
         ) as file:
 
-            manifest = json.load(
-                file
-            )
+            manifest = json.load(file)
 
     except json.JSONDecodeError as error:
 
@@ -378,7 +163,8 @@ def load_manifest(
     ):
 
         raise ValueError(
-            "Manifest root must be a JSON object."
+            "Manifest root must be "
+            "a JSON object."
         )
 
     return manifest
@@ -411,7 +197,8 @@ def validate_manifest(
     ):
 
         raise ValueError(
-            "Manifest 'models' must be an object."
+            "Manifest 'models' must "
+            "be an object."
         )
 
     required_models = [
@@ -423,29 +210,21 @@ def validate_manifest(
 
     for model_name in required_models:
 
-        if (
-            model_name
-            not in manifest["models"]
+        if model_name not in (
+            manifest["models"]
         ):
 
             raise ValueError(
                 f"Manifest is missing "
-                f"required model: {model_name}"
+                f"required model: "
+                f"{model_name}"
             )
 
         model_info = (
-            manifest["models"][model_name]
+            manifest["models"][
+                model_name
+            ]
         )
-
-        if not isinstance(
-            model_info,
-            dict
-        ):
-
-            raise ValueError(
-                f"Model '{model_name}' "
-                f"must be an object."
-            )
 
         required_model_fields = [
             "filename",
@@ -461,291 +240,277 @@ def validate_manifest(
 
                 raise ValueError(
                     f"Model '{model_name}' "
-                    f"is missing field: {field}"
+                    f"is missing field: "
+                    f"{field}"
                 )
 
 
 # ==========================================================
-# GOOGLE DRIVE DOWNLOAD
+# Google Drive download
 # ==========================================================
-
 
 def download_from_google_drive(
     file_id: str,
     destination: Path,
-    startup_ui=None,
-    model_name="",
-    model_index=0,
-    total_models=1,
+    progress_callback=None,
+    status_callback=None,
+    max_retries: int = 3,
 ) -> None:
+    """
+    Stream a Google Drive file to disk.
 
-    base_url = (
-        "https://drive.google.com/uc"
-    )
+    progress_callback(downloaded_bytes, total_bytes) is called as
+    chunks arrive. status_callback(message) is used for the small
+    periods where Google Drive is preparing/confirming the download.
+    """
+    base_url = "https://drive.google.com/uc"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+
+    opener = urllib.request.build_opener()
+
+    def notify(message):
+        if status_callback is not None:
+            status_callback(message)
 
     params = urllib.parse.urlencode({
         "export": "download",
-        "id": file_id
+        "id": file_id,
     })
 
-    request = urllib.request.Request(
-        f"{base_url}?{params}",
-        headers={
-            "User-Agent": "Mozilla/5.0"
-        }
+    initial_url = f"{base_url}?{params}"
+
+    # ----------------------------------------------------------
+    # Prepare the Google Drive download URL.
+    # ----------------------------------------------------------
+
+    notify(
+        "Connecting to the model server. "
+        "The first connection may take a few seconds."
     )
 
-    with urllib.request.urlopen(
-        request
-    ) as response:
+    request = urllib.request.Request(
+        initial_url,
+        headers=headers,
+    )
 
-        content_type = (
-            response.headers.get(
-                "Content-Type",
-                ""
+    try:
+        with opener.open(
+            request,
+            timeout=60,
+        ) as response:
+
+            content_type = (
+                response.headers.get(
+                    "Content-Type",
+                    ""
+                )
             )
-        )
 
-        if (
-            "text/html"
-            not in content_type.lower()
-        ):
+            if "text/html" not in content_type.lower():
+                download_url = initial_url
 
-            _download_response(
-                response,
-                destination,
-                startup_ui,
-                model_name,
-                model_index,
-                total_models,
+            else:
+                notify(
+                    "Google Drive is preparing the model download. "
+                    "This short pause is expected for large files."
+                )
+
+                html = response.read().decode(
+                    "utf-8",
+                    errors="ignore",
+                )
+
+                confirm_match = re.search(
+                    r'name="confirm"\s+value="([^"]+)"',
+                    html,
+                )
+
+                uuid_match = re.search(
+                    r'name="uuid"\s+value="([^"]+)"',
+                    html,
+                )
+
+                if not confirm_match:
+                    raise RuntimeError(
+                        "Google Drive confirmation token not found."
+                    )
+
+                if not uuid_match:
+                    raise RuntimeError(
+                        "Google Drive confirmation UUID not found."
+                    )
+
+                download_params = urllib.parse.urlencode({
+                    "id": file_id,
+                    "export": "download",
+                    "confirm": confirm_match.group(1),
+                    "uuid": uuid_match.group(1),
+                })
+
+                download_url = (
+                    "https://drive.usercontent.google.com/download?"
+                    + download_params
+                )
+
+    except Exception as error:
+        raise RuntimeError(
+            "Unable to connect to the model server: "
+            f"{error}"
+        ) from error
+
+    partial_path = Path(
+        str(destination) + ".part"
+    )
+
+    chunk_size = 1024 * 1024
+    last_error = None
+
+    # ----------------------------------------------------------
+    # Stream the actual file.
+    # ----------------------------------------------------------
+
+    for attempt in range(
+        1,
+        max_retries + 1
+    ):
+
+        try:
+
+            if partial_path.exists():
+                partial_path.unlink()
+
+            notify(
+                "Starting the model download. "
+                "Download time depends on your internet speed "
+                "and connection quality."
+            )
+
+            request = urllib.request.Request(
+                download_url,
+                headers=headers,
+            )
+
+            with opener.open(
+                request,
+                timeout=60,
+            ) as response:
+
+                content_type = (
+                    response.headers.get(
+                        "Content-Type",
+                        ""
+                    )
+                )
+
+                if "text/html" in content_type.lower():
+                    raise RuntimeError(
+                        "Google Drive returned HTML instead "
+                        "of the model file."
+                    )
+
+                content_length = (
+                    response.headers.get(
+                        "Content-Length"
+                    )
+                )
+
+                try:
+                    total_bytes = (
+                        int(content_length)
+                        if content_length
+                        else None
+                    )
+                except ValueError:
+                    total_bytes = None
+
+                downloaded_bytes = 0
+
+                with partial_path.open(
+                    "wb"
+                ) as file:
+
+                    while True:
+
+                        chunk = response.read(
+                            chunk_size
+                        )
+
+                        if not chunk:
+                            break
+
+                        file.write(
+                            chunk
+                        )
+
+                        downloaded_bytes += (
+                            len(chunk)
+                        )
+
+                        if progress_callback is not None:
+                            progress_callback(
+                                downloaded_bytes,
+                                total_bytes,
+                            )
+
+                if (
+                    total_bytes is not None
+                    and downloaded_bytes
+                    != total_bytes
+                ):
+                    raise ConnectionError(
+                        "Incomplete download: "
+                        f"{downloaded_bytes} of "
+                        f"{total_bytes} bytes received."
+                    )
+
+            partial_path.replace(
+                destination
             )
 
             return
 
-        data = response.read()
+        except Exception as error:
 
-    html = data.decode(
-        "utf-8",
-        errors="ignore"
-    )
+            last_error = error
 
-    confirm_match = re.search(
-        r'name="confirm"\s+value="([^"]+)"',
-        html
-    )
+            try:
+                if partial_path.exists():
+                    partial_path.unlink()
+            except OSError:
+                pass
 
-    uuid_match = re.search(
-        r'name="uuid"\s+value="([^"]+)"',
-        html
-    )
+            if attempt >= max_retries:
+                raise RuntimeError(
+                    "Google Drive download failed after "
+                    f"{max_retries} attempts: {error}"
+                ) from error
 
-    if not confirm_match:
-
-        raise RuntimeError(
-            "Google Drive confirmation "
-            "token not found."
-        )
-
-    if not uuid_match:
-
-        raise RuntimeError(
-            "Google Drive confirmation UUID "
-            "not found."
-        )
-
-    confirm = (
-        confirm_match.group(1)
-    )
-
-    uuid = (
-        uuid_match.group(1)
-    )
-
-    download_params = (
-        urllib.parse.urlencode({
-            "id": file_id,
-            "export": "download",
-            "confirm": confirm,
-            "uuid": uuid
-        })
-    )
-
-    download_url = (
-        "https://drive.usercontent.google.com/download"
-        f"?{download_params}"
-    )
-
-    download_request = (
-        urllib.request.Request(
-            download_url,
-            headers={
-                "User-Agent": "Mozilla/5.0"
-            }
-        )
-    )
-
-    with urllib.request.urlopen(
-        download_request
-    ) as response:
-
-        final_content_type = (
-            response.headers.get(
-                "Content-Type",
-                ""
-            )
-        )
-
-        if (
-            "text/html"
-            in final_content_type.lower()
-        ):
-
-            raise RuntimeError(
-                "Google Drive returned HTML "
-                "instead of the model."
+            notify(
+                "The download connection paused unexpectedly. "
+                f"Retrying ({attempt}/{max_retries})..."
             )
 
-        _download_response(
-            response,
-            destination,
-            startup_ui,
-            model_name,
-            model_index,
-            total_models,
-        )
+            time.sleep(
+                1.5 * attempt
+            )
+
+    raise RuntimeError(
+        f"Download failed: {last_error}"
+    )
 
 
 # ==========================================================
-# DOWNLOAD RESPONSE
+# SHA-256
 # ==========================================================
-
-
-def _download_response(
-    response,
-    destination: Path,
-    startup_ui,
-    model_name,
-    model_index,
-    total_models,
-) -> None:
-
-    total_size = (
-        response.headers.get(
-            "Content-Length"
-        )
-    )
-
-    try:
-
-        total_size = int(
-            total_size
-        )
-
-    except (
-        TypeError,
-        ValueError
-    ):
-
-        total_size = 0
-
-    downloaded = 0
-
-    chunk_size = (
-        1024 * 1024
-    )
-
-    with destination.open(
-        "wb"
-    ) as file:
-
-        while True:
-
-            chunk = response.read(
-                chunk_size
-            )
-
-            if not chunk:
-
-                break
-
-            file.write(
-                chunk
-            )
-
-            downloaded += len(
-                chunk
-            )
-
-            if total_size > 0:
-
-                file_progress = (
-                    downloaded
-                    / total_size
-                )
-
-            else:
-
-                file_progress = 0.0
-
-            file_progress = max(
-                0.0,
-                min(
-                    file_progress,
-                    1.0
-                )
-            )
-
-            package_progress = (
-                (
-                    model_index
-                    + file_progress
-                )
-                / total_models
-            )
-
-            if startup_ui is not None:
-
-                startup_ui.set_model_status(
-                    model_name,
-                    "Downloading",
-                    file_progress
-                )
-
-                startup_ui.set_progress(
-                    package_progress
-                )
-
-
-# ==========================================================
-# SHA-256 WITH UI PROGRESS
-# ==========================================================
-
 
 def calculate_sha256(
-    file_path: Path,
-    startup_ui=None,
-    model_name=""
+    file_path: Path
 ) -> str:
-    """
-    Calculate SHA-256 while continuing to
-    update the startup UI.
-
-    This prevents the startup window from
-    appearing frozen while large files are
-    being verified.
-    """
 
     sha256 = hashlib.sha256()
-
-    total_size = (
-        file_path.stat().st_size
-    )
-
-    processed = 0
-
-    chunk_size = (
-        1024 * 1024
-    )
 
     with file_path.open(
         "rb"
@@ -754,82 +519,34 @@ def calculate_sha256(
         while True:
 
             chunk = file.read(
-                chunk_size
+                1024 * 1024
             )
 
             if not chunk:
-
                 break
 
             sha256.update(
                 chunk
             )
 
-            processed += len(
-                chunk
-            )
-
-            if total_size > 0:
-
-                progress = (
-                    processed
-                    / total_size
-                )
-
-            else:
-
-                progress = 1.0
-
-            progress = max(
-                0.0,
-                min(
-                    progress,
-                    1.0
-                )
-            )
-
-            # ----------------------------------------------
-            # Keep startup UI alive during hashing.
-            # ----------------------------------------------
-
-            if startup_ui is not None:
-
-                startup_ui.set_model_status(
-                    model_name,
-                    "Verifying",
-                    progress
-                )
-
-                startup_ui.set_status(
-                    "Verifying model integrity...",
-                    (
-                        f"Checking {model_name}. "
-                        f"This may take a moment for larger files."
-                    )
-                )
-
-    return (
-        sha256.hexdigest()
-    )
+    return sha256.hexdigest()
 
 
 # ==========================================================
-# MODEL VALIDATION
+# Model validation
 # ==========================================================
-
 
 def validate_downloaded_model(
     file_path: Path,
     expected_size: int,
-    expected_sha256: str,
-    startup_ui=None,
+    expected_sha256: str
 ) -> None:
 
     if not file_path.exists():
 
         raise RuntimeError(
-            f"Downloaded file does not exist: "
-            f"{file_path}"
+            f"Downloaded file does not "
+            f"exist: {file_path}"
         )
 
     actual_size = (
@@ -847,9 +564,7 @@ def validate_downloaded_model(
 
     actual_sha256 = (
         calculate_sha256(
-            file_path,
-            startup_ui=startup_ui,
-            model_name=file_path.name
+            file_path
         )
     )
 
@@ -867,204 +582,13 @@ def validate_downloaded_model(
 
 
 # ==========================================================
-# DOWNLOAD MODEL PACKAGE
+# Metadata
 # ==========================================================
 
-
-def download_model_package(
-    manifest: dict,
-    startup_ui=None
-) -> Path:
-
-    validate_manifest(
-        manifest
-    )
-
-    version = (
-        manifest["model_version"]
-    )
-
-    version_dir = (
-        get_version_dir(version)
-    )
-
-    version_dir.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    models = (
-        manifest["models"]
-    )
-
-    total_models = len(
-        models
-    )
-
-    # ------------------------------------------------------
-    # Initialize startup UI
-    # ------------------------------------------------------
-
-    if startup_ui is not None:
-
-        startup_ui.initialize_models(
-            [
-                model_info["filename"]
-                for model_info
-                in models.values()
-            ]
-        )
-
-        startup_ui.set_status(
-            "Downloading recognition models...",
-            (
-                "EchoHands is downloading the models "
-                "required for sign language recognition."
-            )
-        )
-
-    print(
-        f"Preparing EchoHands model package "
-        f"{version}..."
-    )
-
-    # ------------------------------------------------------
-    # Download each model
-    # ------------------------------------------------------
-
-    for index, (
-        model_name,
-        model_info
-    ) in enumerate(
-        models.items()
-    ):
-
-        filename = (
-            model_info["filename"]
-        )
-
-        file_id = (
-            model_info["file_id"]
-        )
-
-        expected_size = (
-            model_info["size_bytes"]
-        )
-
-        expected_sha256 = (
-            model_info["sha256"]
-        )
-
-        destination = (
-            version_dir
-            / filename
-        )
-
-        # --------------------------------------------------
-        # Downloading
-        # --------------------------------------------------
-
-        if startup_ui is not None:
-
-            startup_ui.set_model_status(
-                filename,
-                "Downloading",
-                0.0
-            )
-
-            startup_ui.set_status(
-                "Downloading recognition models...",
-                (
-                    f"Downloading model "
-                    f"{index + 1} of "
-                    f"{total_models}."
-                )
-            )
-
-        print(
-            f"Downloading {filename}..."
-        )
-
-        download_from_google_drive(
-            file_id,
-            destination,
-            startup_ui=startup_ui,
-            model_name=filename,
-            model_index=index,
-            total_models=total_models,
-        )
-
-        # --------------------------------------------------
-        # Download finished
-        # --------------------------------------------------
-
-        if startup_ui is not None:
-
-            startup_ui.set_model_status(
-                filename,
-                "Verifying",
-                0.0
-            )
-
-            startup_ui.set_status(
-                "Verifying model integrity...",
-                (
-                    f"The download of {filename} "
-                    f"is complete. Checking the file."
-                )
-            )
-
-        print(
-            f"Validating {filename}..."
-        )
-
-        # --------------------------------------------------
-        # Validate
-        #
-        # The UI remains alive inside calculate_sha256().
-        # --------------------------------------------------
-
-        validate_downloaded_model(
-            destination,
-            expected_size,
-            expected_sha256,
-            startup_ui=startup_ui
-        )
-
-        print(
-            f"{filename} validated successfully."
-        )
-
-        # --------------------------------------------------
-        # Verified
-        # --------------------------------------------------
-
-        if startup_ui is not None:
-
-            startup_ui.set_model_status(
-                filename,
-                "Verified",
-                1.0
-            )
-
-            startup_ui.set_progress(
-                (
-                    index + 1
-                )
-                / total_models
-            )
-
-            startup_ui.set_status(
-                "Model verified.",
-                (
-                    f"{filename} was downloaded "
-                    f"and verified successfully."
-                )
-            )
-
-    # ------------------------------------------------------
-    # Installation timestamp
-    # ------------------------------------------------------
+def save_package_metadata(
+    version_dir: Path,
+    version: str
+) -> None:
 
     installed_at = (
         datetime.now(
@@ -1072,41 +596,362 @@ def download_model_package(
         ).isoformat()
     )
 
-    save_version_metadata(
-        version,
-        installed_at
+    metadata = {
+        "version": version,
+        "installed_at": installed_at,
+    }
+
+    metadata_path = (
+        version_dir
+        / "cache_metadata.json"
     )
+
+    with metadata_path.open(
+        "w",
+        encoding="utf-8"
+    ) as file:
+
+        json.dump(
+            metadata,
+            file,
+            indent=4
+        )
+
+
+# ==========================================================
+# Download package
+# ==========================================================
+
+def download_model_package(
+    manifest: dict,
+    startup=None
+) -> Path:
+    """
+    Download and validate all models in the manifest.
+
+    The overall progress bar is based on actual bytes across the
+    complete package. It never resets to 25/50/75% between models.
+    """
+    validate_manifest(
+        manifest
+    )
+
+    version = manifest["model_version"]
+
+    version_dir = get_version_dir(
+        version
+    )
+
+    version_dir.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    models = manifest["models"]
+    model_names = list(models.keys())
+
+    total_models = len(model_names)
+
+    # Total bytes of the complete model package.
+    total_package_bytes = sum(
+        int(models[name]["size_bytes"])
+        for name in model_names
+    )
+
+    completed_package_bytes = 0
+    completed_models = 0
+
+    if startup is not None:
+        startup.initialize_models(
+            [
+                models[name]["filename"]
+                for name in model_names
+            ]
+        )
+
+        startup.set_overall_progress(
+            0,
+            total_package_bytes,
+            0,
+            total_models
+        )
+
+    for model_name in model_names:
+
+        model_info = models[model_name]
+
+        filename = model_info["filename"]
+        file_id = model_info["file_id"]
+        expected_size = int(
+            model_info["size_bytes"]
+        )
+        expected_sha256 = model_info["sha256"]
+
+        destination = (
+            version_dir / filename
+        )
+
+        if startup is not None:
+            startup.set_model_status(
+                filename,
+                "connecting"
+            )
+
+            startup.set_task(
+                "Preparing model download..."
+            )
+
+            startup.set_status(
+                "Connecting to the model server. "
+                "The first connection may take a few seconds."
+            )
+
+        print(
+            f"Downloading {filename}..."
+        )
+
+        download_started = time.monotonic()
+        last_progress_time = download_started
+        last_progress_bytes = 0
+
+        def report_status(message):
+            if startup is not None:
+                startup.set_status(
+                    message
+                )
+
+        def report_download(
+            downloaded,
+            response_total
+        ):
+            nonlocal last_progress_time
+            nonlocal last_progress_bytes
+
+            now = time.monotonic()
+
+            elapsed = (
+                now - last_progress_time
+            )
+
+            if elapsed >= 0.2:
+                speed = (
+                    downloaded
+                    - last_progress_bytes
+                ) / elapsed
+
+                last_progress_time = now
+                last_progress_bytes = downloaded
+
+            else:
+                total_elapsed = max(
+                    now - download_started,
+                    0.001
+                )
+
+                speed = (
+                    downloaded
+                    / total_elapsed
+                )
+
+            # The manifest size is authoritative for package-wide
+            # progress. This also keeps progress working if the
+            # server omits Content-Length.
+            current_total = (
+                expected_size
+            )
+
+            overall_downloaded = (
+                completed_package_bytes
+                + min(
+                    downloaded,
+                    expected_size
+                )
+            )
+
+            if startup is not None:
+                startup.set_download_progress(
+                    filename,
+                    downloaded,
+                    current_total,
+                    overall_downloaded,
+                    total_package_bytes,
+                    speed
+                )
+
+        if startup is not None:
+            startup.set_model_status(
+                filename,
+                "connecting"
+            )
+
+        download_from_google_drive(
+            file_id,
+            destination,
+            progress_callback=report_download,
+            status_callback=report_status,
+        )
+
+        if startup is not None:
+            startup.set_model_status(
+                filename,
+                "downloaded"
+            )
+
+            startup.set_task(
+                "Verifying model integrity..."
+            )
+
+            startup.set_status(
+                f"Checking {filename} using its "
+                "SHA-256 fingerprint. "
+                "This can briefly pause while the file "
+                "is being checked."
+            )
+
+            startup.set_model_status(
+                filename,
+                "verifying"
+            )
+
+        print(
+            f"Validating {filename}..."
+        )
+
+        validate_downloaded_model(
+            destination,
+            expected_size,
+            expected_sha256
+        )
+
+        print(
+            f"{filename} validated successfully."
+        )
+
+        completed_package_bytes += (
+            expected_size
+        )
+
+        completed_models += 1
+
+        if startup is not None:
+            startup.set_model_status(
+                filename,
+                "verified"
+            )
+
+            # Keep the bar at the actual cumulative byte position.
+            startup.set_overall_progress(
+                completed_package_bytes,
+                total_package_bytes,
+                completed_models,
+                total_models
+            )
+
+    save_package_metadata(
+        version_dir,
+        version
+    )
+
+    if startup is not None:
+        startup.set_overall_progress(
+            total_package_bytes,
+            total_package_bytes,
+            total_models,
+            total_models
+        )
+
+        startup.set_task(
+            "Model package ready."
+        )
+
+        startup.set_status(
+            "All recognition models have been "
+            "downloaded and verified successfully."
+        )
 
     print(
         "All models downloaded and "
         "validated successfully."
     )
 
-    # ------------------------------------------------------
-    # Final UI
-    # ------------------------------------------------------
-
-    if startup_ui is not None:
-
-        startup_ui.set_progress(
-            1.0
-        )
-
-        startup_ui.set_status(
-            "Models verified.",
-            (
-                "All recognition models were "
-                "downloaded and verified successfully."
-            )
-        )
-
     return version_dir
 
 
 # ==========================================================
-# CACHE VALIDATION
+# Expiration
 # ==========================================================
 
+CACHE_EXPIRATION_DAYS = 90
+
+
+def is_cache_expired(
+    version_dir: Path
+) -> bool:
+
+    metadata_path = (
+        version_dir
+        / "cache_metadata.json"
+    )
+
+    if not metadata_path.exists():
+
+        return True
+
+    try:
+
+        with metadata_path.open(
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            metadata = json.load(
+                file
+            )
+
+        installed_at = (
+            metadata.get(
+                "installed_at"
+            )
+        )
+
+        if not installed_at:
+
+            return True
+
+        installed_time = (
+            datetime.fromisoformat(
+                installed_at
+            )
+        )
+
+        if installed_time.tzinfo is None:
+
+            installed_time = (
+                installed_time.replace(
+                    tzinfo=timezone.utc
+                )
+            )
+
+        age = (
+            datetime.now(
+                timezone.utc
+            )
+            - installed_time
+        )
+
+        return (
+            age.days
+            >= CACHE_EXPIRATION_DAYS
+        )
+
+    except Exception:
+
+        return True
+
+
+# ==========================================================
+# Cached package validation
+# ==========================================================
 
 def is_cached_package_valid(
     manifest: dict
@@ -1121,7 +966,9 @@ def is_cached_package_valid(
     )
 
     version_dir = (
-        get_version_dir(version)
+        get_version_dir(
+            version
+        )
     )
 
     if not version_dir.exists():
@@ -1129,15 +976,14 @@ def is_cached_package_valid(
         return False
 
     if is_cache_expired(
-        version
+        version_dir
     ):
 
         return False
 
-    for (
-        model_name,
-        model_info
-    ) in manifest["models"].items():
+    for model_name, model_info in (
+        manifest["models"].items()
+    ):
 
         filename = (
             model_info["filename"]
@@ -1176,13 +1022,12 @@ def is_cached_package_valid(
 
 
 # ==========================================================
-# PREPARE MODELS
+# Prepare models
 # ==========================================================
-
 
 def prepare_models(
     manifest: dict,
-    startup_ui=None
+    startup=None
 ) -> Path:
 
     validate_manifest(
@@ -1193,36 +1038,32 @@ def prepare_models(
         manifest["model_version"]
     )
 
-    # ------------------------------------------------------
-    # Initialize UI
-    # ------------------------------------------------------
+    models = (
+        manifest["models"]
+    )
 
-    if startup_ui is not None:
+    if startup is not None:
 
-        startup_ui.initialize_models(
+        startup.initialize_models(
             [
-                model_info["filename"]
-                for model_info
-                in manifest["models"].values()
+                info["filename"]
+                for info in models.values()
             ]
         )
 
-        startup_ui.set_status(
-            "Checking model package...",
-            (
-                "Checking whether EchoHands already "
-                "has the required recognition models."
-            )
+        startup.set_task(
+            "Checking recognition models..."
+        )
+
+        startup.set_status(
+            "Looking for a valid local "
+            "model package."
         )
 
     print(
         f"Checking EchoHands model package "
         f"{version}..."
     )
-
-    # ======================================================
-    # VALID CACHE
-    # ======================================================
 
     if is_cached_package_valid(
         manifest
@@ -1232,118 +1073,154 @@ def prepare_models(
             "Cached model package is valid."
         )
 
-        if startup_ui is not None:
+        if startup is not None:
 
             for model_info in (
-                manifest["models"].values()
+                models.values()
             ):
 
-                startup_ui.set_model_status(
+                startup.set_model_status(
                     model_info["filename"],
-                    "Verified",
-                    1.0
+                    "cached"
                 )
 
-            startup_ui.set_progress(
-                1.0
+            total_cached_bytes = sum(
+                int(info["size_bytes"])
+                for info in models.values()
             )
 
-            startup_ui.set_status(
-                "Models verified.",
-                (
-                    "Using the previously downloaded "
-                    "model package."
-                )
+            startup.set_overall_progress(
+                total_cached_bytes,
+                total_cached_bytes,
+                len(models),
+                len(models)
             )
 
-        installed_at = (
-            load_version_metadata(
-                version
-            ).get(
-                "installed_at"
+            startup.set_task(
+                "Recognition models are ready."
             )
-        )
+
+            startup.set_status(
+                "A valid model package was "
+                "found on this computer. "
+                "No download is required."
+            )
 
         save_cache_state({
             "active_version": version,
             "status": "ready",
-            "installed_at": installed_at,
+            "installed_at": (
+                datetime.now(
+                    timezone.utc
+                ).isoformat()
+            )
         })
-
-        cleanup_expired_models(
-            active_version=version
-        )
 
         return get_version_dir(
             version
         )
-
-    # ======================================================
-    # CACHE MISSING / INVALID
-    # ======================================================
 
     print(
         "Cached model package is "
         "missing or invalid."
     )
 
+    if startup is not None:
+
+        startup.set_task(
+            "Downloading recognition models..."
+        )
+
+        startup.set_status(
+            "This is a one-time setup. "
+            "The models may take a few minutes "
+            "to download and verify."
+        )
+
     print(
         "Downloading model package..."
     )
 
-    if startup_ui is not None:
-
-        startup_ui.set_status(
-            "Setting up EchoHands for first use...",
-            (
-                "The required recognition models "
-                "need to be downloaded."
-            )
-        )
-
-    # ------------------------------------------------------
-    # Download
-    # ------------------------------------------------------
-
     package_dir = (
         download_model_package(
             manifest,
-            startup_ui=startup_ui
+            startup=startup
         )
     )
-
-    # ------------------------------------------------------
-    # Installation timestamp
-    # ------------------------------------------------------
-
-    installed_at = (
-        load_version_metadata(
-            version
-        ).get(
-            "installed_at"
-        )
-    )
-
-    # ------------------------------------------------------
-    # Save active cache state
-    # ------------------------------------------------------
 
     save_cache_state({
         "active_version": version,
         "status": "ready",
-        "installed_at": installed_at,
+        "installed_at": (
+            datetime.now(
+                timezone.utc
+            ).isoformat()
+        )
     })
 
-    # ------------------------------------------------------
-    # Cleanup
-    # ------------------------------------------------------
+    if startup is not None:
 
-    cleanup_expired_models(
-        active_version=version
-    )
+        startup.set_task(
+            "Model package ready."
+        )
+
+        startup.set_status(
+            "All recognition models have "
+            "been downloaded and verified."
+        )
 
     print(
         "Model package prepared successfully."
     )
 
     return package_dir
+
+
+# ==========================================================
+# Cleanup expired versions
+# ==========================================================
+
+def cleanup_expired_versions(
+    active_version=None
+) -> None:
+
+    cache_root = (
+        get_cache_root()
+    )
+
+    if not cache_root.exists():
+
+        return
+
+    for version_dir in (
+        cache_root.iterdir()
+    ):
+
+        if not version_dir.is_dir():
+
+            continue
+
+        if (
+            active_version is not None
+            and version_dir.name
+            == active_version
+        ):
+
+            continue
+
+        if is_cache_expired(
+            version_dir
+        ):
+
+            print(
+                "Removing expired "
+                f"model cache: "
+                f"{version_dir.name}"
+            )
+
+            import shutil
+
+            shutil.rmtree(
+                version_dir,
+                ignore_errors=True
+            )

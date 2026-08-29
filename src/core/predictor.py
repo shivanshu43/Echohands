@@ -11,6 +11,7 @@ class Predictor:
     ):
 
         self.model_path = model_path
+
         self.encoder_path = encoder_path
 
         self.model = self.load_model()
@@ -18,6 +19,18 @@ class Predictor:
         self.label_encoder = (
             self.load_label_encoder()
         )
+
+        # ======================================================
+        # Diagnostic information
+        #
+        # Does NOT change predict() return values.
+        # ======================================================
+
+        self.last_top_predictions = []
+
+    # ======================================================
+    # Load Random Forest
+    # ======================================================
 
     def load_model(self):
 
@@ -34,6 +47,10 @@ class Predictor:
                 f"'{self.model_path}': {error}"
             )
 
+    # ======================================================
+    # Load Label Encoder
+    # ======================================================
+
     def load_label_encoder(self):
 
         try:
@@ -49,9 +66,18 @@ class Predictor:
                 f"'{self.encoder_path}': {error}"
             )
 
-    def predict(self, features):
+    # ======================================================
+    # Prediction
+    # ======================================================
+
+    def predict(
+        self,
+        features
+    ):
 
         if features is None:
+
+            self.last_top_predictions = []
 
             return None, 0.0
 
@@ -85,15 +111,55 @@ class Predictor:
                 )[0]
             )
 
-            confidence = probabilities[
-                predicted_class
-            ]
+            confidence = float(
+                probabilities[
+                    predicted_class
+                ]
+            )
 
             predicted_label = (
                 self.label_encoder
                 .inverse_transform(
                     [predicted_class]
                 )[0]
+            )
+
+            # ==================================================
+            # Store top-3 model predictions for diagnostics.
+            #
+            # This does NOT modify the existing return format.
+            # ==================================================
+
+            ranked_indices = np.argsort(
+                probabilities
+            )[::-1]
+
+            top_predictions = []
+
+            for class_index in ranked_indices[:3]:
+
+                label = (
+                    self.label_encoder
+                    .inverse_transform(
+                        [class_index]
+                    )[0]
+                )
+
+                probability = float(
+                    probabilities[
+                        class_index
+                    ]
+                )
+
+                top_predictions.append(
+                    (
+                        str(label),
+                        probability
+                    )
+                )
+
+            self.last_top_predictions = (
+                top_predictions
             )
 
             return (

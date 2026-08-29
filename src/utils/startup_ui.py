@@ -1,56 +1,694 @@
-import cv2
-import numpy as np
+import queue
+import threading
+from pathlib import Path
+import tkinter as tk
+
+try:
+    from PIL import Image, ImageTk
+except ImportError:
+    Image = None
+    ImageTk = None
 
 
 class StartupUI:
 
-    WINDOW_NAME = "EchoHands - Starting"
+    SPINNER_FRAMES = [
+        "⠋",
+        "⠙",
+        "⠹",
+        "⠸",
+        "⠼",
+        "⠴",
+        "⠦",
+        "⠧",
+        "⠇",
+        "⠏",
+    ]
 
-    WIDTH = 1000
-    HEIGHT = 720
+    CONTENT_WIDTH = 700
 
     def __init__(self):
 
-        self.current_status = (
-            "Initializing EchoHands..."
-        )
-
-        self.current_detail = (
-            "Preparing the application."
-        )
-
-        self.progress = 0.0
-
-        self.phase = "initializing"
-
-        # --------------------------------------------------
-        # Lightweight ASCII animation.
-        #
-        # Avoids Unicode characters such as ✓ or ◐,
-        # which were previously appearing as ???.
-        # --------------------------------------------------
+        self.root = None
+        self.running = False
 
         self.spinner_index = 0
 
-        self.spinner_frames = [
-            "[..]",
-            "[...]",
-            "[. .]",
-            "[...]",
-        ]
+        self.task_label = None
+        self.info_label = None
+        self.spinner_label = None
+
+        self.progress_canvas = None
+        self.progress_bar = None
+        self.progress_text = None
+
+        self.models_frame = None
+
+        self.banner_image = None
 
         self.model_rows = {}
 
         self.total_models = 0
-
         self.completed_models = 0
 
-        self.current_model = ""
+        self.current_progress = 0.0
 
-        self.window_created = False
+        self._ui_queue = queue.Queue()
+
+        self._worker_thread = None
+        self._worker_result = None
+        self._worker_error = None
+        self._worker_done = False
+
+        self._main_thread_id = threading.get_ident()
 
     # ==========================================================
-    # INITIALIZE MODEL LIST
+    # START
+    # ==========================================================
+
+    def start(self):
+
+        if self.running:
+            return
+
+        self.root = tk.Tk()
+
+        self.root.title(
+            "EchoHands - Starting"
+        )
+
+        self.root.configure(
+            bg="#151515"
+        )
+
+        self.root.resizable(
+            False,
+            False
+        )
+
+        width = 780
+        height = 590
+
+        screen_width = (
+            self.root.winfo_screenwidth()
+        )
+
+        screen_height = (
+            self.root.winfo_screenheight()
+        )
+
+        position_x = (
+            screen_width - width
+        ) // 2
+
+        position_y = (
+            screen_height - height
+        ) // 2
+
+        self.root.geometry(
+            f"{width}x{height}+"
+            f"{position_x}+{position_y}"
+        )
+
+        main = tk.Frame(
+            self.root,
+            bg="#151515"
+        )
+
+        main.pack(
+            fill="both",
+            expand=True,
+            padx=38,
+            pady=24
+        )
+
+        # ======================================================
+        # BANNER
+        # ======================================================
+
+        self._create_banner(
+            main
+        )
+
+        # ======================================================
+        # CURRENT TASK
+        # ======================================================
+
+        task_frame = tk.Frame(
+            main,
+            bg="#151515"
+        )
+
+        task_frame.pack(
+            fill="x",
+            pady=(8, 0)
+        )
+
+        self.task_label = tk.Label(
+            task_frame,
+            text="Starting EchoHands...",
+            font=(
+                "Segoe UI Semibold",
+                17
+            ),
+            fg="#ffffff",
+            bg="#151515",
+            anchor="w",
+            justify="left",
+            wraplength=self.CONTENT_WIDTH - 50
+        )
+
+        self.task_label.pack(
+            side="left",
+            fill="x",
+            expand=True
+        )
+
+        self.spinner_label = tk.Label(
+            task_frame,
+            text="⠋",
+            font=(
+                "Segoe UI",
+                19
+            ),
+            fg="#ffffff",
+            bg="#151515"
+        )
+
+        self.spinner_label.pack(
+            side="right"
+        )
+
+        # ======================================================
+        # INFORMATION
+        # ======================================================
+
+        self.info_label = tk.Label(
+            main,
+            text=(
+                "Preparing EchoHands. "
+                "Please wait..."
+            ),
+            font=(
+                "Segoe UI",
+                10
+            ),
+            fg="#aaaaaa",
+            bg="#151515",
+            justify="left",
+            anchor="w",
+            wraplength=self.CONTENT_WIDTH - 20
+        )
+
+        self.info_label.pack(
+            fill="x",
+            pady=(8, 14)
+        )
+
+        # ======================================================
+        # DIVIDER
+        # ======================================================
+
+        tk.Frame(
+            main,
+            height=1,
+            bg="#383838"
+        ).pack(
+            fill="x",
+            pady=(0, 14)
+        )
+
+        # ======================================================
+        # MODEL SETUP TITLE
+        # ======================================================
+
+        tk.Label(
+            main,
+            text="MODEL SETUP",
+            font=(
+                "Segoe UI Semibold",
+                10
+            ),
+            fg="#bbbbbb",
+            bg="#151515",
+            anchor="w"
+        ).pack(
+            fill="x",
+            pady=(0, 6)
+        )
+
+        # ======================================================
+        # MODEL LIST
+        # ======================================================
+
+        self.models_frame = tk.Frame(
+            main,
+            bg="#151515"
+        )
+
+        self.models_frame.pack(
+            fill="x"
+        )
+
+        # ======================================================
+        # OVERALL PROGRESS TITLE
+        # ======================================================
+
+        tk.Label(
+            main,
+            text="OVERALL DOWNLOAD PROGRESS",
+            font=(
+                "Segoe UI Semibold",
+                10
+            ),
+            fg="#bbbbbb",
+            bg="#151515",
+            anchor="w"
+        ).pack(
+            fill="x",
+            pady=(14, 6)
+        )
+
+        # ======================================================
+        # PROGRESS BAR
+        # ======================================================
+
+        self.progress_canvas = tk.Canvas(
+            main,
+            width=self.CONTENT_WIDTH,
+            height=12,
+            bg="#343434",
+            highlightthickness=0
+        )
+
+        self.progress_canvas.pack(
+            fill="x"
+        )
+
+        self.progress_bar = (
+            self.progress_canvas.create_rectangle(
+                0,
+                0,
+                0,
+                12,
+                fill="#eeeeee",
+                outline=""
+            )
+        )
+
+        # ======================================================
+        # PROGRESS TEXT
+        # ======================================================
+
+        self.progress_text = tk.Label(
+            main,
+            text="0.0%    0 / 0 models verified",
+            font=(
+                "Segoe UI",
+                9
+            ),
+            fg="#aaaaaa",
+            bg="#151515",
+            anchor="w"
+        )
+
+        self.progress_text.pack(
+            fill="x",
+            pady=(6, 0)
+        )
+
+        # ======================================================
+        # ACTIVATE UI
+        # ======================================================
+
+        self.running = True
+
+        self._animate_spinner()
+
+        self.root.after(
+            50,
+            self._process_queue
+        )
+
+        self.root.update_idletasks()
+        self.root.update()
+
+    # ==========================================================
+    # BANNER
+    # ==========================================================
+
+    def _create_banner(
+        self,
+        parent
+    ):
+
+        banner_path = (
+            Path(__file__).resolve().parents[2]
+            / "Assets"
+            / "banner.png"
+        )
+
+        if not banner_path.exists():
+            return
+
+        try:
+
+            if Image and ImageTk:
+
+                image = Image.open(
+                    banner_path
+                ).convert(
+                    "RGBA"
+                )
+
+                target_width = (
+                    self.CONTENT_WIDTH
+                )
+
+                if image.width != target_width:
+
+                    target_height = max(
+                        1,
+                        round(
+                            image.height
+                            * target_width
+                            / image.width
+                        )
+                    )
+
+                    image = image.resize(
+                        (
+                            target_width,
+                            target_height
+                        ),
+                        Image.LANCZOS
+                    )
+
+                self.banner_image = (
+                    ImageTk.PhotoImage(
+                        image
+                    )
+                )
+
+            else:
+
+                self.banner_image = (
+                    tk.PhotoImage(
+                        file=str(
+                            banner_path
+                        )
+                    )
+                )
+
+            banner_label = tk.Label(
+                parent,
+                image=self.banner_image,
+                bg="#151515",
+                bd=0,
+                highlightthickness=0
+            )
+
+            banner_label.pack(
+                fill="x",
+                pady=(0, 2)
+            )
+
+        except Exception:
+
+            self.banner_image = None
+
+    # ==========================================================
+    # SPINNER
+    # ==========================================================
+
+    def _animate_spinner(self):
+
+        if (
+            not self.running
+            or not self.root
+        ):
+            return
+
+        try:
+
+            self.spinner_label.config(
+                text=self.SPINNER_FRAMES[
+                    self.spinner_index
+                ]
+            )
+
+            self.spinner_index = (
+                self.spinner_index + 1
+            ) % len(
+                self.SPINNER_FRAMES
+            )
+
+            self.root.after(
+                100,
+                self._animate_spinner
+            )
+
+        except tk.TclError:
+
+            self.running = False
+
+    # ==========================================================
+    # UI QUEUE
+    # ==========================================================
+
+    def _process_queue(self):
+
+        if (
+            not self.running
+            or not self.root
+        ):
+            return
+
+        try:
+
+            while True:
+
+                func, args, kwargs = (
+                    self._ui_queue.get_nowait()
+                )
+
+                func(
+                    *args,
+                    **kwargs
+                )
+
+        except queue.Empty:
+
+            pass
+
+        except tk.TclError:
+
+            self.running = False
+
+            return
+
+        self.root.after(
+            50,
+            self._process_queue
+        )
+
+    # ==========================================================
+    # THREAD-SAFE UI CALL
+    # ==========================================================
+
+    def _call_ui(
+        self,
+        func,
+        *args,
+        **kwargs
+    ):
+
+        if (
+            threading.get_ident()
+            == self._main_thread_id
+        ):
+
+            func(
+                *args,
+                **kwargs
+            )
+
+        elif self.running:
+
+            self._ui_queue.put(
+                (
+                    func,
+                    args,
+                    kwargs
+                )
+            )
+
+    # ==========================================================
+    # WORKER
+    # ==========================================================
+
+    def run_worker(
+        self,
+        target
+    ):
+
+        if not self.running:
+            self.start()
+
+        self._worker_result = None
+        self._worker_error = None
+        self._worker_done = False
+
+        def worker():
+
+            try:
+
+                self._worker_result = (
+                    target()
+                )
+
+            except Exception as error:
+
+                self._worker_error = error
+
+            finally:
+
+                self._worker_done = True
+
+        self._worker_thread = (
+            threading.Thread(
+                target=worker,
+                name="EchoHandsStartup",
+                daemon=True
+            )
+        )
+
+        self._worker_thread.start()
+
+        self.root.after(
+            50,
+            self._check_worker
+        )
+
+        self.root.mainloop()
+
+        if self._worker_error is not None:
+
+            raise self._worker_error
+
+        return self._worker_result
+
+    # ==========================================================
+    # WORKER CHECK
+    # ==========================================================
+
+    def _check_worker(self):
+
+        if not self.running:
+            return
+
+        if not self._worker_done:
+
+            self.root.after(
+                50,
+                self._check_worker
+            )
+
+            return
+
+        if self._worker_error is not None:
+
+            self._show_error(
+                str(
+                    self._worker_error
+                )
+            )
+
+            self.root.after(
+                1800,
+                self.close
+            )
+
+            return
+
+        self.finish()
+
+    # ==========================================================
+    # ERROR
+    # ==========================================================
+
+    def _show_error(
+        self,
+        message
+    ):
+
+        self.task_label.config(
+            text="EchoHands could not start."
+        )
+
+        self.spinner_label.config(
+            text="!"
+        )
+
+        self.info_label.config(
+            text=message,
+            wraplength=self.CONTENT_WIDTH - 20
+        )
+
+        self._update_window()
+
+    # ==========================================================
+    # TASK
+    # ==========================================================
+
+    def set_task(
+        self,
+        message
+    ):
+
+        self._call_ui(
+            self._set_task,
+            message
+        )
+
+    def _set_task(
+        self,
+        message
+    ):
+
+        if self.running:
+
+            self.task_label.config(
+                text=message
+            )
+
+    # ==========================================================
+    # STATUS
+    # ==========================================================
+
+    def set_status(
+        self,
+        message
+    ):
+
+        self._call_ui(
+            self._set_status,
+            message
+        )
+
+    def _set_status(
+        self,
+        message
+    ):
+
+        if self.running:
+
+            self.info_label.config(
+                text=message
+            )
+
+    # ==========================================================
+    # MODEL INITIALIZATION
     # ==========================================================
 
     def initialize_models(
@@ -58,697 +696,582 @@ class StartupUI:
         model_names
     ):
 
+        self._call_ui(
+            self._initialize_models,
+            model_names
+        )
+
+    def _initialize_models(
+        self,
+        model_names
+    ):
+
+        if not self.running:
+            return
+
+        for widget in (
+            self.models_frame.winfo_children()
+        ):
+
+            widget.destroy()
+
         self.model_rows = {}
 
-        self.total_models = len(
-            model_names
+        self.total_models = (
+            len(model_names)
         )
 
         self.completed_models = 0
 
-        for name in model_names:
+        for model_name in model_names:
 
-            self.model_rows[name] = {
-                "status": "Waiting",
-                "progress": 0.0,
+            row = tk.Frame(
+                self.models_frame,
+                bg="#151515"
+            )
+
+            row.pack(
+                fill="x",
+                pady=3
+            )
+
+            state = tk.Label(
+                row,
+                text="[ ]",
+                font=(
+                    "Consolas",
+                    10
+                ),
+                fg="#777777",
+                bg="#151515",
+                width=5,
+                anchor="w"
+            )
+
+            state.pack(
+                side="left"
+            )
+
+            name = tk.Label(
+                row,
+                text=model_name,
+                font=(
+                    "Consolas",
+                    10
+                ),
+                fg="#dddddd",
+                bg="#151515",
+                anchor="w"
+            )
+
+            name.pack(
+                side="left"
+            )
+
+            status = tk.Label(
+                row,
+                text="Waiting",
+                font=(
+                    "Segoe UI",
+                    9
+                ),
+                fg="#888888",
+                bg="#151515",
+                anchor="e"
+            )
+
+            status.pack(
+                side="right"
+            )
+
+            self.model_rows[
+                model_name
+            ] = {
+                "state": state,
+                "name": name,
+                "status": status,
             }
 
-        self.show()
+        self._update_progress()
 
     # ==========================================================
-    # MAIN DISPLAY
-    # ==========================================================
-
-    def show(self):
-
-        frame = np.zeros(
-            (
-                self.HEIGHT,
-                self.WIDTH,
-                3
-            ),
-            dtype=np.uint8
-        )
-
-        frame[:] = (
-            24,
-            24,
-            24
-        )
-
-        # ======================================================
-        # HEADER
-        # ======================================================
-
-        self._put_text(
-            frame,
-            "EchoHands",
-            (65, 65),
-            1.25,
-            2
-        )
-
-        self._put_text(
-            frame,
-            "Sign Language Recognition",
-            (68, 98),
-            0.52,
-            1
-        )
-
-        # ======================================================
-        # MAIN STATUS
-        # ======================================================
-
-        self._put_text(
-            frame,
-            self.current_status,
-            (65, 150),
-            0.70,
-            2
-        )
-
-        # ------------------------------------------------------
-        # Animated spinner
-        # ------------------------------------------------------
-
-        spinner = (
-            self.spinner_frames[
-                self.spinner_index
-                % len(self.spinner_frames)
-            ]
-        )
-
-        self.spinner_index += 1
-
-        self._put_text(
-            frame,
-            spinner,
-            (875, 150),
-            0.50,
-            1
-        )
-
-        # ======================================================
-        # DETAIL
-        # ======================================================
-
-        self._put_text(
-            frame,
-            self.current_detail,
-            (65, 185),
-            0.43,
-            1
-        )
-
-        # ======================================================
-        # INFORMATION MESSAGE
-        # ======================================================
-
-        if self.phase == "downloading":
-
-            self._put_text(
-                frame,
-                "First-time setup: EchoHands is downloading the recognition models.",
-                (65, 215),
-                0.40,
-                1
-            )
-
-            self._put_text(
-                frame,
-                "This may take a few minutes depending on your internet speed.",
-                (65, 240),
-                0.40,
-                1
-            )
-
-        elif self.phase == "verifying":
-
-            self._put_text(
-                frame,
-                "The download is complete. EchoHands is checking the file integrity.",
-                (65, 215),
-                0.40,
-                1
-            )
-
-            self._put_text(
-                frame,
-                "Large model files may take a moment to verify. Please wait.",
-                (65, 240),
-                0.40,
-                1
-            )
-
-        elif self.phase == "checking":
-
-            self._put_text(
-                frame,
-                "Checking your existing model package before starting recognition.",
-                (65, 215),
-                0.40,
-                1
-            )
-
-        elif self.phase == "loading":
-
-            self._put_text(
-                frame,
-                "The models are ready. Initializing the recognition engine.",
-                (65, 215),
-                0.40,
-                1
-            )
-
-        elif self.phase == "camera":
-
-            self._put_text(
-                frame,
-                "Recognition is ready. Starting the camera and hand detector.",
-                (65, 215),
-                0.40,
-                1
-            )
-
-        elif self.phase == "ready":
-
-            self._put_text(
-                frame,
-                "All required components are ready.",
-                (65, 215),
-                0.40,
-                1
-            )
-
-        # ======================================================
-        # SEPARATOR
-        # ======================================================
-
-        cv2.line(
-            frame,
-            (65, 275),
-            (935, 275),
-            (65, 65, 65),
-            1
-        )
-
-        # ======================================================
-        # MODEL SETUP
-        # ======================================================
-
-        self._put_text(
-            frame,
-            "MODEL SETUP",
-            (65, 310),
-            0.46,
-            1
-        )
-
-        # ======================================================
-        # MODEL ROWS
-        # ======================================================
-
-        row_y = 350
-
-        row_height = 47
-
-        for index, (
-            name,
-            info
-        ) in enumerate(
-            self.model_rows.items()
-        ):
-
-            y = (
-                row_y
-                + index * row_height
-            )
-
-            status = info[
-                "status"
-            ]
-
-            progress = info[
-                "progress"
-            ]
-
-            # --------------------------------------------------
-            # Status indicator
-            # --------------------------------------------------
-
-            if status == "Verified":
-
-                symbol = "[OK]"
-
-            elif status in (
-                "Downloading",
-                "Verifying"
-            ):
-
-                symbol = "[>>]"
-
-            else:
-
-                symbol = "[  ]"
-
-            self._put_text(
-                frame,
-                symbol,
-                (65, y),
-                0.40,
-                1
-            )
-
-            # --------------------------------------------------
-            # Model name
-            # --------------------------------------------------
-
-            self._put_text(
-                frame,
-                name,
-                (145, y),
-                0.40,
-                1
-            )
-
-            # --------------------------------------------------
-            # Model status
-            # --------------------------------------------------
-
-            if status == "Downloading":
-
-                status_text = (
-                    f"Downloading "
-                    f"{int(progress * 100)}%"
-                )
-
-            elif status == "Verifying":
-
-                # Show verification progress as well.
-                #
-                # This makes it obvious that the application
-                # is not frozen while SHA-256 is calculated.
-
-                status_text = (
-                    f"Downloaded  |  "
-                    f"Verifying {int(progress * 100)}%"
-                )
-
-            elif status == "Verified":
-
-                status_text = (
-                    "Downloaded  |  Verified"
-                )
-
-            else:
-
-                status_text = (
-                    "Waiting"
-                )
-
-            self._put_text(
-                frame,
-                status_text,
-                (650, y),
-                0.38,
-                1
-            )
-
-        # ======================================================
-        # OVERALL PROGRESS
-        # ======================================================
-
-        progress_title_y = 555
-
-        self._put_text(
-            frame,
-            "OVERALL PROGRESS",
-            (
-                65,
-                progress_title_y
-            ),
-            0.43,
-            1
-        )
-
-        # ======================================================
-        # PROGRESS BAR
-        # ======================================================
-
-        bar_x = 65
-
-        bar_y = 575
-
-        bar_width = 870
-
-        bar_height = 18
-
-        # Background
-        cv2.rectangle(
-            frame,
-            (
-                bar_x,
-                bar_y
-            ),
-            (
-                bar_x + bar_width,
-                bar_y + bar_height
-            ),
-            (
-                65,
-                65,
-                65
-            ),
-            -1
-        )
-
-        progress_width = int(
-            bar_width
-            * max(
-                0.0,
-                min(
-                    self.progress,
-                    1.0
-                )
-            )
-        )
-
-        if progress_width > 0:
-
-            cv2.rectangle(
-                frame,
-                (
-                    bar_x,
-                    bar_y
-                ),
-                (
-                    bar_x + progress_width,
-                    bar_y + bar_height
-                ),
-                (
-                    245,
-                    245,
-                    245
-                ),
-                -1
-            )
-
-        # ======================================================
-        # PROGRESS INFORMATION
-        # ======================================================
-
-        percentage = int(
-            self.progress * 100
-        )
-
-        self._put_text(
-            frame,
-            f"{percentage}%",
-            (
-                65,
-                620
-            ),
-            0.43,
-            1
-        )
-
-        self._put_text(
-            frame,
-            (
-                f"{self.completed_models}/"
-                f"{self.total_models} models verified"
-            ),
-            (
-                180,
-                620
-            ),
-            0.43,
-            1
-        )
-
-        # ======================================================
-        # CURRENT OPERATION
-        #
-        # This replaces the old CURRENT TASK section.
-        # It is more useful because it explains the pause
-        # during verification.
-        # ======================================================
-
-        operation_y = 655
-
-        if self.phase == "verifying":
-
-            operation_text = (
-                "Verifying model integrity"
-            )
-
-        elif self.phase == "downloading":
-
-            operation_text = (
-                "Downloading recognition models"
-            )
-
-        elif self.phase == "checking":
-
-            operation_text = (
-                "Checking installed models"
-            )
-
-        elif self.phase == "loading":
-
-            operation_text = (
-                "Initializing recognition engine"
-            )
-
-        elif self.phase == "camera":
-
-            operation_text = (
-                "Starting camera"
-            )
-
-        elif self.phase == "ready":
-
-            operation_text = (
-                "Startup complete"
-            )
-
-        else:
-
-            operation_text = (
-                "Preparing EchoHands"
-            )
-
-        self._put_text(
-            frame,
-            operation_text,
-            (
-                65,
-                operation_y
-            ),
-            0.40,
-            1
-        )
-
-        # ------------------------------------------------------
-        # Animated indicator next to operation
-        # ------------------------------------------------------
-
-        self._put_text(
-            frame,
-            spinner,
-            (
-                355,
-                operation_y
-            ),
-            0.40,
-            1
-        )
-
-        # ======================================================
-        # FOOTER
-        # ======================================================
-
-        self._put_text(
-            frame,
-            "Please keep this window open while EchoHands prepares the recognition system.",
-            (
-                65,
-                695
-            ),
-            0.36,
-            1
-        )
-
-        # ======================================================
-        # DISPLAY
-        # ======================================================
-
-        cv2.imshow(
-            self.WINDOW_NAME,
-            frame
-        )
-
-        cv2.waitKey(1)
-
-        self.window_created = True
-
-    # ==========================================================
-    # SET GENERAL STATUS
-    # ==========================================================
-
-    def set_status(
-        self,
-        status,
-        detail=""
-    ):
-
-        self.current_status = status
-
-        self.current_detail = detail
-
-        status_lower = (
-            status.lower()
-        )
-
-        if "download" in status_lower:
-
-            self.phase = "downloading"
-
-        elif "verif" in status_lower:
-
-            self.phase = "verifying"
-
-        elif (
-            "recognition"
-            in status_lower
-        ):
-
-            self.phase = "loading"
-
-        elif "camera" in status_lower:
-
-            self.phase = "camera"
-
-        elif "ready" in status_lower:
-
-            self.phase = "ready"
-
-        elif "check" in status_lower:
-
-            self.phase = "checking"
-
-        else:
-
-            self.phase = "initializing"
-
-        self.show()
-
-    # ==========================================================
-    # SET MODEL STATUS
+    # MODEL STATUS
     # ==========================================================
 
     def set_model_status(
         self,
         model_name,
-        status,
-        progress=0.0
+        status
     ):
 
-        if model_name not in self.model_rows:
+        self._call_ui(
+            self._set_model_status,
+            model_name,
+            status
+        )
 
-            self.model_rows[
-                model_name
-            ] = {
-                "status": "Waiting",
-                "progress": 0.0,
-            }
+    def _set_model_status(
+        self,
+        model_name,
+        status
+    ):
 
-            self.total_models = len(
-                self.model_rows
+        if (
+            not self.running
+            or model_name
+            not in self.model_rows
+        ):
+
+            return
+
+        row = self.model_rows[
+            model_name
+        ]
+
+        states = {
+
+            "waiting": (
+                "[ ]",
+                "Waiting"
+            ),
+
+            "preparing": (
+                "[>]",
+                "Preparing..."
+            ),
+
+            "connecting": (
+                "[>]",
+                "Connecting..."
+            ),
+
+            "downloading": (
+                "[>]",
+                "Downloading..."
+            ),
+
+            "downloaded": (
+                "[✓]",
+                "Downloaded"
+            ),
+
+            "verifying": (
+                "[>]",
+                "Verifying integrity..."
+            ),
+
+            "verified": (
+                "[✓]",
+                "Verified"
+            ),
+
+            "cached": (
+                "[✓]",
+                "Ready"
+            ),
+
+            "error": (
+                "[!]",
+                "Failed"
+            ),
+        }
+
+        state_text, status_text = (
+            states.get(
+                status,
+                (
+                    "[ ]",
+                    status
+                )
+            )
+        )
+
+        row["state"].config(
+            text=state_text,
+            fg=(
+                "#ffffff"
+                if status != "waiting"
+                else "#777777"
+            )
+        )
+
+        row["status"].config(
+            text=status_text,
+            fg=(
+                "#ffffff"
+                if status != "waiting"
+                else "#888888"
+            )
+        )
+
+        if status == "verified":
+
+            self.completed_models = min(
+                self.completed_models + 1,
+                self.total_models
             )
 
-        self.model_rows[
-            model_name
-        ]["status"] = status
-
-        self.model_rows[
-            model_name
-        ]["progress"] = max(
-            0.0,
-            min(
-                float(progress),
-                1.0
-            )
-        )
-
-        self.current_model = (
-            model_name
-        )
-
-        self.completed_models = sum(
-            1
-            for info
-            in self.model_rows.values()
-            if info["status"] == "Verified"
-        )
-
-        self.show()
+        self._update_progress()
 
     # ==========================================================
-    # SET OVERALL PROGRESS
+    # DYNAMIC BYTE PROGRESS
+    # ==========================================================
+
+    def set_download_progress(
+        self,
+        filename,
+        downloaded,
+        file_total,
+        overall_downloaded,
+        overall_total,
+        speed_bps=0.0
+    ):
+
+        self._call_ui(
+            self._set_download_progress,
+            filename,
+            downloaded,
+            file_total,
+            overall_downloaded,
+            overall_total,
+            speed_bps
+        )
+
+    def _set_download_progress(
+        self,
+        filename,
+        downloaded,
+        file_total,
+        overall_downloaded,
+        overall_total,
+        speed_bps
+    ):
+
+        if not self.running:
+            return
+
+        file_percentage = (
+            downloaded
+            / file_total
+            * 100
+            if file_total
+            else 0.0
+        )
+
+        overall_percentage = (
+            overall_downloaded
+            / overall_total
+            * 100
+            if overall_total
+            else 0.0
+        )
+
+        self.current_progress = (
+            overall_percentage
+        )
+
+        self._update_progress_value(
+            overall_percentage
+        )
+
+        if speed_bps > 0:
+
+            speed_text = (
+                self._format_bytes(
+                    speed_bps
+                )
+                + "/s"
+            )
+
+        else:
+
+            speed_text = (
+                "calculating speed..."
+            )
+
+        self.progress_text.config(
+            text=(
+                f"{overall_percentage:.1f}%    "
+                f"{self.completed_models} / "
+                f"{self.total_models} models verified"
+            )
+        )
+
+        # IMPORTANT:
+        # Keep this to exactly two lines.
+        # Do not add the internet-speed/footer message here.
+        self.info_label.config(
+            text=(
+                f"Downloading {filename}\n"
+                f"{self._format_bytes(downloaded)} / "
+                f"{self._format_bytes(file_total)} "
+                f"({file_percentage:.1f}%)  •  "
+                f"{speed_text}"
+            )
+        )
+
+    # ==========================================================
+    # OVERALL BYTE PROGRESS
+    # ==========================================================
+
+    def set_overall_progress(
+        self,
+        downloaded_bytes,
+        total_bytes,
+        completed_models=None,
+        total_models=None
+    ):
+
+        self._call_ui(
+            self._set_overall_progress,
+            downloaded_bytes,
+            total_bytes,
+            completed_models,
+            total_models
+        )
+
+    def _set_overall_progress(
+        self,
+        downloaded_bytes,
+        total_bytes,
+        completed_models=None,
+        total_models=None
+    ):
+
+        if not self.running:
+            return
+
+        if total_bytes:
+
+            percentage = (
+                downloaded_bytes
+                / total_bytes
+                * 100
+            )
+
+        else:
+
+            percentage = 0.0
+
+        self.current_progress = (
+            percentage
+        )
+
+        self._update_progress_value(
+            percentage
+        )
+
+        if completed_models is not None:
+
+            self.completed_models = (
+                completed_models
+            )
+
+        if total_models is not None:
+
+            self.total_models = (
+                total_models
+            )
+
+        self.progress_text.config(
+            text=(
+                f"{percentage:.1f}%    "
+                f"{self.completed_models} / "
+                f"{self.total_models} models verified"
+            )
+        )
+
+    # ==========================================================
+    # FORMAT BYTES
+    # ==========================================================
+
+    def _format_bytes(
+        self,
+        value
+    ):
+
+        value = float(
+            value or 0
+        )
+
+        for unit in (
+            "B",
+            "KB",
+            "MB",
+            "GB"
+        ):
+
+            if (
+                value < 1024
+                or unit == "GB"
+            ):
+
+                return (
+                    f"{value:.1f} {unit}"
+                )
+
+            value /= 1024
+
+        return (
+            f"{value:.1f} GB"
+        )
+
+    # ==========================================================
+    # LEGACY MODEL PROGRESS
     # ==========================================================
 
     def set_progress(
         self,
-        progress
+        completed,
+        total
     ):
 
-        self.progress = max(
-            0.0,
-            min(
-                float(progress),
-                1.0
+        self._call_ui(
+            self._set_progress,
+            completed,
+            total
+        )
+
+    def _set_progress(
+        self,
+        completed,
+        total
+    ):
+
+        self.completed_models = (
+            completed
+        )
+
+        self.total_models = (
+            total
+        )
+
+        try:
+
+            self.progress_text.config(
+                text=(
+                    f"{self.current_progress:.1f}%    "
+                    f"{self.completed_models} / "
+                    f"{self.total_models} "
+                    "models verified"
+                )
+            )
+
+        except tk.TclError:
+
+            pass
+
+    # ==========================================================
+    # PROGRESS BAR VALUE
+    # ==========================================================
+
+    def _update_progress_value(
+        self,
+        percentage
+    ):
+
+        try:
+
+            percentage = max(
+                0,
+                min(
+                    100,
+                    percentage
+                )
+            )
+
+            width = (
+                self.CONTENT_WIDTH
+                * percentage
+                / 100
+            )
+
+            self.progress_canvas.coords(
+                self.progress_bar,
+                0,
+                0,
+                width,
+                12
+            )
+
+        except tk.TclError:
+
+            pass
+
+    # ==========================================================
+    # UPDATE PROGRESS
+    # ==========================================================
+
+    def _update_progress(self):
+
+        try:
+
+            self.progress_text.config(
+                text=(
+                    f"{self.current_progress:.1f}%    "
+                    f"{self.completed_models} / "
+                    f"{self.total_models} "
+                    "models verified"
+                )
+            )
+
+        except tk.TclError:
+
+            pass
+
+    # ==========================================================
+    # FINISH
+    # ==========================================================
+
+    def finish(
+        self,
+        message="EchoHands is ready."
+    ):
+
+        if not self.running:
+            return
+
+        self.task_label.config(
+            text=message
+        )
+
+        self.spinner_label.config(
+            text="✓"
+        )
+
+        self.info_label.config(
+            text=(
+                "Startup completed. "
+                "Launching recognition..."
             )
         )
 
-        self.show()
-
-    # ==========================================================
-    # COMPLETE STARTUP
-    # ==========================================================
-
-    def complete(self):
-
-        self.progress = 1.0
-
-        self.phase = "ready"
-
-        self.current_status = (
-            "EchoHands is ready."
+        self.root.after(
+            450,
+            self.close
         )
 
-        self.current_detail = (
-            "All models have been downloaded and verified successfully."
-        )
+    # ==========================================================
+    # UPDATE WINDOW
+    # ==========================================================
 
-        for info in (
-            self.model_rows.values()
+    def _update_window(self):
+
+        if (
+            not self.running
+            or not self.root
         ):
 
-            info["status"] = "Verified"
+            return
 
-            info["progress"] = 1.0
+        try:
 
-        self.completed_models = (
-            self.total_models
-        )
+            self.root.update_idletasks()
+            self.root.update()
 
-        self.current_model = (
-            "Startup complete."
-        )
+        except tk.TclError:
 
-        self.show()
+            self.running = False
 
     # ==========================================================
     # CLOSE
@@ -756,42 +1279,16 @@ class StartupUI:
 
     def close(self):
 
+        if not self.running:
+            return
+
+        self.running = False
+
         try:
 
-            cv2.destroyWindow(
-                self.WINDOW_NAME
-            )
+            self.root.quit()
+            self.root.destroy()
 
-        except cv2.error:
+        except tk.TclError:
 
             pass
-
-        self.window_created = False
-
-    # ==========================================================
-    # TEXT HELPER
-    # ==========================================================
-
-    def _put_text(
-        self,
-        frame,
-        text,
-        position,
-        scale,
-        thickness
-    ):
-
-        cv2.putText(
-            frame,
-            str(text),
-            position,
-            cv2.FONT_HERSHEY_SIMPLEX,
-            scale,
-            (
-                245,
-                245,
-                245
-            ),
-            thickness,
-            cv2.LINE_AA
-        )
