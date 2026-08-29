@@ -1,4 +1,6 @@
 import time
+from pathlib import Path
+
 import cv2
 
 from src.core.camera import Camera
@@ -11,8 +13,66 @@ from src.core.word_builder import WordBuilder
 
 from src.utils.config import WINDOW_NAME
 
+from src.utils.model_manager import (
+    load_manifest,
+    prepare_models,
+)
+
 
 def main():
+
+    # ==========================================
+    # Prepare EchoHands models
+    # ==========================================
+
+    manifest_path = Path(
+        "manifest_test.json"
+    )
+
+    print(
+        "\n========== EchoHands Model Manager ==========\n"
+    )
+
+    print(
+        "Loading model manifest..."
+    )
+
+    manifest = load_manifest(
+        manifest_path
+    )
+
+    print(
+        "Preparing models..."
+    )
+
+    model_dir = prepare_models(
+        manifest
+    )
+
+    print(
+        f"Active model directory:\n"
+        f"{model_dir}\n"
+    )
+
+    # ==========================================
+    # Model paths
+    # ==========================================
+
+    static_model_path = (
+        model_dir / "random_forest.pkl"
+    )
+
+    static_encoder_path = (
+        model_dir / "label_encoder.pkl"
+    )
+
+    dynamic_model_path = (
+        model_dir / "dynamic_lstm.keras"
+    )
+
+    dynamic_encoder_path = (
+        model_dir / "dynamic_label_encoder.npy"
+    )
 
     # ==========================================
     # Initialize components
@@ -24,9 +84,15 @@ def main():
 
     processor = LandmarkProcessor()
 
-    static_predictor = Predictor()
+    static_predictor = Predictor(
+        model_path=static_model_path,
+        encoder_path=static_encoder_path,
+    )
 
-    dynamic_predictor = DynamicPredictor()
+    dynamic_predictor = DynamicPredictor(
+        model_path=dynamic_model_path,
+        encoder_path=dynamic_encoder_path,
+    )
 
     controller = RecognitionController(
         static_predictor,
@@ -86,11 +152,17 @@ def main():
         "\n========== Sign Language Recognition ==========\n"
     )
 
-    print("Static gestures : A-Y + 0-9")
+    print(
+        "Static gestures : A-Y + 0-9"
+    )
 
-    print("Dynamic gestures: J / Z")
+    print(
+        "Dynamic gestures: J / Z"
+    )
 
-    print("Press SPACE to add a space.")
+    print(
+        "Press SPACE to add a space."
+    )
 
     print(
         "Press SPACE twice quickly to clear text."
@@ -100,7 +172,9 @@ def main():
         "Press BACKSPACE to remove last character."
     )
 
-    print("Press 'Q' to exit.\n")
+    print(
+        "Press 'Q' to exit.\n"
+    )
 
     try:
 
@@ -142,14 +216,18 @@ def main():
             # Hand entry / exit detection
             # ==========================================
 
-            hand_present = features is not None
+            hand_present = (
+                features is not None
+            )
 
             if (
                 hand_present
                 and not hand_was_present
             ):
 
-                waiting_for_hand_initialization = True
+                waiting_for_hand_initialization = (
+                    True
+                )
 
                 recognition_ready = False
 
@@ -160,7 +238,9 @@ def main():
                 and hand_was_present
             ):
 
-                waiting_for_hand_initialization = False
+                waiting_for_hand_initialization = (
+                    False
+                )
 
                 recognition_ready = False
 
@@ -201,7 +281,9 @@ def main():
                 and mode == controller.STATIC
             ):
 
-                waiting_for_hand_initialization = False
+                waiting_for_hand_initialization = (
+                    False
+                )
 
                 recognition_ready = True
 
@@ -593,7 +675,9 @@ def main():
 
                     word_builder.space()
 
-                    last_space_time = current_time
+                    last_space_time = (
+                        current_time
+                    )
 
             # ------------------------------------------
             # BACKSPACE

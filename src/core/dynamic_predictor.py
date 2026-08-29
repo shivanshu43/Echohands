@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import tensorflow as tf
 
@@ -9,16 +11,24 @@ class DynamicPredictor:
 
     def __init__(
         self,
-        model_path="models/dynamic_lstm.keras",
-        encoder_path="models/dynamic_label_encoder.npy",
+        model_path,
+        encoder_path,
     ):
 
-        self.model = tf.keras.models.load_model(
+        self.model_path = Path(
             model_path
         )
 
+        self.encoder_path = Path(
+            encoder_path
+        )
+
+        self.model = tf.keras.models.load_model(
+            self.model_path
+        )
+
         self.classes = np.load(
-            encoder_path,
+            self.encoder_path,
             allow_pickle=True
         )
 
@@ -27,9 +37,14 @@ class DynamicPredictor:
         sequence
     ):
 
-        original_frames = sequence.shape[0]
+        original_frames = (
+            sequence.shape[0]
+        )
 
-        if original_frames == self.TARGET_FRAMES:
+        if (
+            original_frames
+            == self.TARGET_FRAMES
+        ):
 
             return sequence
 
@@ -57,10 +72,16 @@ class DynamicPredictor:
             self.FEATURES_PER_FRAME
         ):
 
-            resampled[:, feature_index] = np.interp(
+            resampled[
+                :,
+                feature_index
+            ] = np.interp(
                 new_indices,
                 old_indices,
-                sequence[:, feature_index]
+                sequence[
+                    :,
+                    feature_index
+                ]
             )
 
         return resampled
@@ -83,15 +104,19 @@ class DynamicPredictor:
 
             raise ValueError(
                 "Sequence must have shape "
-                f"(frames, {self.FEATURES_PER_FRAME})."
+                f"(frames, "
+                f"{self.FEATURES_PER_FRAME})."
             )
 
-        if sequence.shape[1] != self.FEATURES_PER_FRAME:
+        if (
+            sequence.shape[1]
+            != self.FEATURES_PER_FRAME
+        ):
 
             raise ValueError(
                 f"Expected "
-                f"{self.FEATURES_PER_FRAME} features "
-                f"per frame, "
+                f"{self.FEATURES_PER_FRAME} "
+                f"features per frame, "
                 f"got {sequence.shape[1]}."
             )
 
@@ -99,8 +124,10 @@ class DynamicPredictor:
 
             return None, 0.0
 
-        sequence = self._resample_sequence(
-            sequence
+        sequence = (
+            self._resample_sequence(
+                sequence
+            )
         )
 
         sequence = sequence.reshape(
@@ -109,21 +136,27 @@ class DynamicPredictor:
             self.FEATURES_PER_FRAME
         )
 
-        prediction = self.model.predict(
-            sequence,
-            verbose=0
+        prediction = (
+            self.model.predict(
+                sequence,
+                verbose=0
+            )
         )
 
         predicted_index = np.argmax(
             prediction[0]
         )
 
-        predicted_class = self.classes[
-            predicted_index
-        ]
+        predicted_class = (
+            self.classes[
+                predicted_index
+            ]
+        )
 
         confidence = float(
-            prediction[0][predicted_index]
+            prediction[0][
+                predicted_index
+            ]
         )
 
         return (
