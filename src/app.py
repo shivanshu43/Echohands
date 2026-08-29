@@ -1,713 +1,811 @@
+import os
+
+# ==========================================================
+# Reduce TensorFlow startup noise
+#
+# Must be set BEFORE TensorFlow is imported.
+# ==========================================================
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
 import time
 from pathlib import Path
 
 import cv2
+
+from src.utils.startup_ui import StartupUI
+from src.utils.model_manager import (
+    load_manifest,
+    prepare_models,
+)
 
 from src.core.camera import Camera
 from src.core.hand_detector import HandDetector
 from src.core.landmark_processor import LandmarkProcessor
 from src.core.predictor import Predictor
 from src.core.dynamic_predictor import DynamicPredictor
-from src.core.recognition_controller import RecognitionController
+from src.core.recognition_controller import (
+    RecognitionController
+)
 from src.core.word_builder import WordBuilder
 
 from src.utils.config import WINDOW_NAME
 
-from src.utils.model_manager import (
-    load_manifest,
-    prepare_models,
-)
-
 
 def main():
 
-    # ==========================================
-    # Prepare EchoHands models
-    # ==========================================
+    # ==========================================================
+    # STARTUP UI
+    # ==========================================================
 
-    manifest_path = Path(
-        "manifest_test.json"
-    )
+    startup_ui = StartupUI()
 
-    print(
-        "\n========== EchoHands Model Manager ==========\n"
-    )
-
-    print(
-        "Loading model manifest..."
-    )
-
-    manifest = load_manifest(
-        manifest_path
-    )
-
-    print(
-        "Preparing models..."
-    )
-
-    model_dir = prepare_models(
-        manifest
-    )
-
-    print(
-        f"Active model directory:\n"
-        f"{model_dir}\n"
-    )
-
-    # ==========================================
-    # Model paths
-    # ==========================================
-
-    static_model_path = (
-        model_dir / "random_forest.pkl"
-    )
-
-    static_encoder_path = (
-        model_dir / "label_encoder.pkl"
-    )
-
-    dynamic_model_path = (
-        model_dir / "dynamic_lstm.keras"
-    )
-
-    dynamic_encoder_path = (
-        model_dir / "dynamic_label_encoder.npy"
-    )
-
-    # ==========================================
-    # Initialize components
-    # ==========================================
-
-    camera = Camera()
-
-    detector = HandDetector()
-
-    processor = LandmarkProcessor()
-
-    static_predictor = Predictor(
-        model_path=static_model_path,
-        encoder_path=static_encoder_path,
-    )
-
-    dynamic_predictor = DynamicPredictor(
-        model_path=dynamic_model_path,
-        encoder_path=dynamic_encoder_path,
-    )
-
-    controller = RecognitionController(
-        static_predictor,
-        dynamic_predictor,
-        static_confidence_threshold=0.60,
-    )
-
-    word_builder = WordBuilder()
-
-    # ==========================================
-    # Display variables
-    # ==========================================
-
-    last_prediction = "None"
-
-    last_confidence = 0.0
-
-    # ==========================================
-    # Gesture emission protection
-    #
-    # Prevents repeated gesture addition during
-    # controller state transitions.
-    # ==========================================
-
-    gesture_consumed = False
-
-    previous_mode = controller.NONE
-
-    # ==========================================
-    # Hand-entry protection
-    #
-    # Prevents accidental first gesture
-    # duplication when the hand enters.
-    # ==========================================
-
-    hand_was_present = False
-
-    waiting_for_hand_initialization = False
-
-    recognition_ready = False
-
-    # ==========================================
-    # Space key tracking
-    # ==========================================
-
-    last_space_time = 0.0
-
-    double_space_interval = 0.5
-
-    # ==========================================
-    # Start camera
-    # ==========================================
-
-    camera.start()
-
-    print(
-        "\n========== Sign Language Recognition ==========\n"
-    )
-
-    print(
-        "Static gestures : A-Y + 0-9"
-    )
-
-    print(
-        "Dynamic gestures: J / Z"
-    )
-
-    print(
-        "Press SPACE to add a space."
-    )
-
-    print(
-        "Press SPACE twice quickly to clear text."
-    )
-
-    print(
-        "Press BACKSPACE to remove last character."
-    )
-
-    print(
-        "Press 'Q' to exit.\n"
+    startup_ui.set_status(
+        "Initializing EchoHands...",
+        "Please wait..."
     )
 
     try:
 
-        while True:
+        # ======================================================
+        # Load manifest
+        # ======================================================
+
+        startup_ui.set_status(
+            "Loading configuration...",
+            "Reading model manifest"
+        )
+
+        manifest_path = Path(
+            "manifest_test.json"
+        )
+
+        manifest = load_manifest(
+            manifest_path
+        )
 
-            # ==========================================
-            # Get frame
-            # ==========================================
+        # ======================================================
+        # Prepare model package
+        # ======================================================
 
-            frame = camera.get_frame()
+        model_dir = prepare_models(
+            manifest,
+            startup_ui=startup_ui
+        )
 
-            if frame is None:
+        # ======================================================
+        # Models verified
+        # ======================================================
 
-                print(
-                    "Failed to capture frame."
-                )
+        startup_ui.set_status(
+            "Models verified.",
+            "SHA-256 integrity checks passed"
+        )
 
-                break
+        startup_ui.set_progress(
+            1.0
+        )
 
-            # ==========================================
-            # Detect hand
-            # ==========================================
+        # Give the user a moment to see
+        # the successful verification.
 
-            results = detector.detect(
-                frame
-            )
+        cv2.waitKey(300)
 
-            # ==========================================
-            # Extract features
-            # ==========================================
+        # ======================================================
+        # Model paths
+        # ======================================================
 
-            features = (
-                processor.extract_features(
-                    results
-                )
-            )
+        static_model_path = (
+            model_dir
+            / "random_forest.pkl"
+        )
 
-            # ==========================================
-            # Hand entry / exit detection
-            # ==========================================
+        static_encoder_path = (
+            model_dir
+            / "label_encoder.pkl"
+        )
 
-            hand_present = (
-                features is not None
-            )
+        dynamic_model_path = (
+            model_dir
+            / "dynamic_lstm.keras"
+        )
 
-            if (
-                hand_present
-                and not hand_was_present
-            ):
+        dynamic_encoder_path = (
+            model_dir
+            / "dynamic_label_encoder.npy"
+        )
 
-                waiting_for_hand_initialization = (
-                    True
-                )
+        # ======================================================
+        # Initialize recognition engine
+        # ======================================================
 
-                recognition_ready = False
+        startup_ui.set_status(
+            "Initializing recognition engine...",
+            "Loading AI models"
+        )
 
-                gesture_consumed = True
+        static_predictor = Predictor(
+            model_path=static_model_path,
+            encoder_path=static_encoder_path,
+        )
 
-            elif (
-                not hand_present
-                and hand_was_present
-            ):
+        dynamic_predictor = DynamicPredictor(
+            model_path=dynamic_model_path,
+            encoder_path=dynamic_encoder_path,
+        )
 
-                waiting_for_hand_initialization = (
-                    False
-                )
+        controller = RecognitionController(
+            static_predictor,
+            dynamic_predictor,
+            static_confidence_threshold=0.60,
+        )
 
-                recognition_ready = False
+        word_builder = WordBuilder()
 
-                gesture_consumed = False
+        # ======================================================
+        # Initialize camera and vision components
+        # ======================================================
 
-            hand_was_present = hand_present
+        startup_ui.set_status(
+            "Starting camera...",
+            "Initializing hand recognition"
+        )
 
-            # ==========================================
-            # Recognition Controller
-            # ==========================================
+        camera = Camera()
 
-            result = controller.update(
-                features
-            )
+        detector = HandDetector()
 
-            prediction = result[
-                "prediction"
-            ]
+        processor = LandmarkProcessor()
 
-            confidence = result[
-                "confidence"
-            ]
+        # ======================================================
+        # Startup complete
+        # ======================================================
 
-            mode = result[
-                "mode"
-            ]
+        startup_ui.complete()
 
-            sequence_complete = result[
-                "sequence_complete"
-            ]
+        cv2.waitKey(700)
 
-            # ==========================================
-            # Hand initialization completed
-            # ==========================================
+        startup_ui.close()
 
-            if (
-                waiting_for_hand_initialization
-                and mode == controller.STATIC
-            ):
+        # ======================================================
+        # Display variables
+        # ======================================================
 
-                waiting_for_hand_initialization = (
-                    False
-                )
+        last_prediction = "None"
 
-                recognition_ready = True
+        last_confidence = 0.0
 
-                # Consume the gesture already present
-                # during initialization.
+        # ======================================================
+        # Gesture emission protection
+        # ======================================================
 
-                gesture_consumed = True
+        gesture_consumed = False
 
-            # ==========================================
-            # Reset gesture permission only when the
-            # controller enters NONE.
-            # ==========================================
+        previous_mode = controller.NONE
 
-            if (
-                recognition_ready
-                and mode == controller.NONE
-                and previous_mode != controller.NONE
-            ):
+        # ======================================================
+        # Hand-entry protection
+        # ======================================================
 
-                gesture_consumed = False
+        hand_was_present = False
 
-            # ==========================================
-            # Add recognized gesture only once
-            # ==========================================
+        waiting_for_hand_initialization = False
 
-            if (
-                prediction is not None
-                and recognition_ready
-                and not waiting_for_hand_initialization
-                and not gesture_consumed
-            ):
+        recognition_ready = False
 
-                word_builder.add(
-                    prediction
-                )
+        # ======================================================
+        # Space key tracking
+        # ======================================================
 
-                gesture_consumed = True
+        last_space_time = 0.0
 
-                last_prediction = prediction
+        double_space_interval = 0.5
 
-                last_confidence = confidence
+        # ======================================================
+        # Start camera
+        # ======================================================
 
-            # ==========================================
-            # Update prediction display
-            # ==========================================
+        camera.start()
 
-            elif prediction is not None:
+        print(
+            "\n========== Sign Language Recognition ==========\n"
+        )
 
-                last_prediction = prediction
+        print(
+            "Static gestures : A-Y + 0-9"
+        )
 
-                last_confidence = confidence
+        print(
+            "Dynamic gestures: J / Z"
+        )
 
-            # ==========================================
-            # Store current mode
-            # ==========================================
+        print(
+            "Press SPACE to add a space."
+        )
 
-            previous_mode = mode
+        print(
+            "Press SPACE twice quickly to clear text."
+        )
 
-            # ==========================================
-            # Draw hand landmarks
-            # ==========================================
+        print(
+            "Press BACKSPACE to remove last character."
+        )
 
-            frame = detector.draw(
-                frame,
-                results
-            )
+        print(
+            "Press 'Q' to exit.\n"
+        )
 
-            # ==========================================
-            # User-friendly Beta status
-            # ==========================================
+        try:
 
-            if not hand_present:
+            while True:
 
-                status = "No Hand Detected"
+                # ==========================================
+                # Get frame
+                # ==========================================
 
-                display_confidence = None
+                frame = camera.get_frame()
 
-            elif (
-                waiting_for_hand_initialization
-                or mode == controller.INITIALIZING
-            ):
+                if frame is None:
 
-                status = "Initializing"
-
-                display_confidence = None
-
-            elif (
-                recognition_ready
-                and mode == controller.NONE
-                and gesture_consumed
-            ):
-
-                status = "Gesture Locked"
-
-                display_confidence = (
-                    last_confidence
-                )
-
-            elif (
-                recognition_ready
-                and mode == controller.STATIC
-            ):
-
-                status = "Ready"
-
-                display_confidence = (
-                    last_confidence
-                )
-
-            else:
-
-                status = "Recognizing"
-
-                display_confidence = (
-                    last_confidence
-                )
-
-            # ==========================================
-            # Confidence text
-            # ==========================================
-
-            if display_confidence is None:
-
-                confidence_text = (
-                    "Confidence: --"
-                )
-
-            else:
-
-                confidence_text = (
-                    f"Confidence: "
-                    f"{display_confidence * 100:.1f}%"
-                )
-
-            # ==========================================
-            # Clean Beta UI
-            # Top-left information panel
-            # ==========================================
-
-            overlay = frame.copy()
-
-            # Semi-transparent dark gray panel
-
-            cv2.rectangle(
-                overlay,
-                (10, 10),
-                (250, 85),
-                (55, 55, 55),
-                -1,
-            )
-
-            # Blend panel with webcam frame
-
-            cv2.addWeighted(
-                overlay,
-                0.65,
-                frame,
-                0.35,
-                0,
-                frame,
-            )
-
-            # ==========================================
-            # UI text styling
-            # ==========================================
-
-            UI_COLOR = (
-                255,
-                255,
-                255,
-            )
-
-            UI_FONT = (
-                cv2.FONT_HERSHEY_SIMPLEX
-            )
-
-            UI_FONT_SCALE = 0.45
-
-            UI_THICKNESS = 1
-
-            # ------------------------------------------
-            # Mode
-            # ------------------------------------------
-
-            cv2.putText(
-                frame,
-                f"Mode: {mode}",
-                (20, 30),
-                UI_FONT,
-                UI_FONT_SCALE,
-                UI_COLOR,
-                UI_THICKNESS,
-                cv2.LINE_AA,
-            )
-
-            # ------------------------------------------
-            # Confidence
-            # ------------------------------------------
-
-            cv2.putText(
-                frame,
-                confidence_text,
-                (20, 52),
-                UI_FONT,
-                UI_FONT_SCALE,
-                UI_COLOR,
-                UI_THICKNESS,
-                cv2.LINE_AA,
-            )
-
-            # ------------------------------------------
-            # Status
-            # ------------------------------------------
-
-            cv2.putText(
-                frame,
-                f"Status: {status}",
-                (20, 74),
-                UI_FONT,
-                UI_FONT_SCALE,
-                UI_COLOR,
-                UI_THICKNESS,
-                cv2.LINE_AA,
-            )
-
-            # ==========================================
-            # Current recognized text
-            #
-            # Displayed at bottom center.
-            # ==========================================
-
-            current_text = (
-                word_builder.get_text()
-            )
-
-            if current_text:
-
-                display_text = current_text
-
-            elif last_prediction != "None":
-
-                display_text = last_prediction
-
-            else:
-
-                display_text = ""
-
-            # ==========================================
-            # Draw bottom-center text
-            # ==========================================
-
-            if display_text:
-
-                font = (
-                    cv2.FONT_HERSHEY_SIMPLEX
-                )
-
-                font_scale = 1.0
-
-                thickness = 2
-
-                (
-                    text_width,
-                    text_height,
-                ), baseline = cv2.getTextSize(
-                    display_text,
-                    font,
-                    font_scale,
-                    thickness,
-                )
-
-                frame_height, frame_width = (
-                    frame.shape[:2]
-                )
-
-                # Center text horizontally
-
-                text_x = int(
-                    (
-                        frame_width
-                        - text_width
+                    print(
+                        "Failed to capture frame."
                     )
-                    / 2
+
+                    break
+
+                # ==========================================
+                # Detect hand
+                # ==========================================
+
+                results = detector.detect(
+                    frame
                 )
 
-                text_y = (
-                    frame_height
-                    - 35
+                # ==========================================
+                # Extract features
+                # ==========================================
+
+                features = (
+                    processor.extract_features(
+                        results
+                    )
                 )
 
-                # --------------------------------------
-                # Draw dark outline
-                #
-                # This keeps the white text visible
-                # against both light and dark backgrounds.
-                # --------------------------------------
+                # ==========================================
+                # Hand entry / exit detection
+                # ==========================================
 
-                cv2.putText(
-                    frame,
-                    display_text,
-                    (
-                        text_x,
-                        text_y,
-                    ),
-                    font,
-                    font_scale,
-                    (
-                        40,
-                        40,
-                        40,
-                    ),
-                    5,
-                    cv2.LINE_AA,
+                hand_present = (
+                    features is not None
                 )
-
-                # --------------------------------------
-                # Draw main white text
-                # --------------------------------------
-
-                cv2.putText(
-                    frame,
-                    display_text,
-                    (
-                        text_x,
-                        text_y,
-                    ),
-                    font,
-                    font_scale,
-                    (
-                        255,
-                        255,
-                        255,
-                    ),
-                    thickness,
-                    cv2.LINE_AA,
-                )
-
-            # ==========================================
-            # Show frame
-            # ==========================================
-
-            cv2.imshow(
-                WINDOW_NAME,
-                frame
-            )
-
-            # ==========================================
-            # Keyboard input
-            # ==========================================
-
-            key = (
-                cv2.waitKey(1)
-                & 0xFF
-            )
-
-            # ------------------------------------------
-            # Quit
-            # ------------------------------------------
-
-            if key in [
-                ord("q"),
-                ord("Q"),
-            ]:
-
-                break
-
-            # ------------------------------------------
-            # SPACE
-            # ------------------------------------------
-
-            elif key == 32:
-
-                current_time = time.time()
 
                 if (
-                    last_space_time > 0
-                    and (
-                        current_time
-                        - last_space_time
-                        <= double_space_interval
-                    )
+                    hand_present
+                    and not hand_was_present
                 ):
 
-                    word_builder.clear()
+                    waiting_for_hand_initialization = (
+                        True
+                    )
 
-                    last_space_time = 0.0
+                    recognition_ready = False
+
+                    gesture_consumed = True
+
+                elif (
+                    not hand_present
+                    and hand_was_present
+                ):
+
+                    waiting_for_hand_initialization = (
+                        False
+                    )
+
+                    recognition_ready = False
+
+                    gesture_consumed = False
+
+                hand_was_present = (
+                    hand_present
+                )
+
+                # ==========================================
+                # Recognition Controller
+                # ==========================================
+
+                result = controller.update(
+                    features
+                )
+
+                prediction = result[
+                    "prediction"
+                ]
+
+                confidence = result[
+                    "confidence"
+                ]
+
+                mode = result[
+                    "mode"
+                ]
+
+                sequence_complete = result[
+                    "sequence_complete"
+                ]
+
+                # ==========================================
+                # Hand initialization completed
+                # ==========================================
+
+                if (
+                    waiting_for_hand_initialization
+                    and mode == controller.STATIC
+                ):
+
+                    waiting_for_hand_initialization = (
+                        False
+                    )
+
+                    recognition_ready = True
+
+                    gesture_consumed = True
+
+                # ==========================================
+                # Reset gesture permission only when
+                # controller enters NONE.
+                # ==========================================
+
+                if (
+                    recognition_ready
+                    and mode == controller.NONE
+                    and previous_mode != controller.NONE
+                ):
+
+                    gesture_consumed = False
+
+                # ==========================================
+                # Add recognized gesture only once
+                # ==========================================
+
+                if (
+                    prediction is not None
+                    and recognition_ready
+                    and not waiting_for_hand_initialization
+                    and not gesture_consumed
+                ):
+
+                    word_builder.add(
+                        prediction
+                    )
+
+                    gesture_consumed = True
+
+                    last_prediction = (
+                        prediction
+                    )
+
+                    last_confidence = (
+                        confidence
+                    )
+
+                # ==========================================
+                # Update prediction display
+                # ==========================================
+
+                elif prediction is not None:
+
+                    last_prediction = (
+                        prediction
+                    )
+
+                    last_confidence = (
+                        confidence
+                    )
+
+                # ==========================================
+                # Store current mode
+                # ==========================================
+
+                previous_mode = mode
+
+                # ==========================================
+                # Draw hand landmarks
+                # ==========================================
+
+                frame = detector.draw(
+                    frame,
+                    results
+                )
+
+                # ==========================================
+                # User-friendly status
+                # ==========================================
+
+                if not hand_present:
+
+                    status = (
+                        "No Hand Detected"
+                    )
+
+                    display_confidence = None
+
+                elif (
+                    waiting_for_hand_initialization
+                    or mode == controller.INITIALIZING
+                ):
+
+                    status = (
+                        "Initializing"
+                    )
+
+                    display_confidence = None
+
+                elif (
+                    recognition_ready
+                    and mode == controller.NONE
+                    and gesture_consumed
+                ):
+
+                    status = (
+                        "Gesture Locked"
+                    )
+
+                    display_confidence = (
+                        last_confidence
+                    )
+
+                elif (
+                    recognition_ready
+                    and mode == controller.STATIC
+                ):
+
+                    status = "Ready"
+
+                    display_confidence = (
+                        last_confidence
+                    )
 
                 else:
 
-                    word_builder.space()
+                    status = "Recognizing"
 
-                    last_space_time = (
-                        current_time
+                    display_confidence = (
+                        last_confidence
                     )
 
-            # ------------------------------------------
-            # BACKSPACE
-            # ------------------------------------------
+                # ==========================================
+                # Confidence text
+                # ==========================================
 
-            elif key in [
-                8,
-                127,
-            ]:
+                if display_confidence is None:
 
-                word_builder.backspace()
+                    confidence_text = (
+                        "Confidence: --"
+                    )
 
-                last_space_time = 0.0
+                else:
 
-            # ------------------------------------------
-            # Any other key resets
-            # double-space timing
-            # ------------------------------------------
+                    confidence_text = (
+                        f"Confidence: "
+                        f"{display_confidence * 100:.1f}%"
+                    )
 
-            elif key != 255:
+                # ==========================================
+                # UI panel
+                # ==========================================
 
-                last_space_time = 0.0
+                overlay = frame.copy()
 
-    finally:
+                cv2.rectangle(
+                    overlay,
+                    (10, 10),
+                    (250, 85),
+                    (55, 55, 55),
+                    -1,
+                )
 
-        detector.close()
+                cv2.addWeighted(
+                    overlay,
+                    0.65,
+                    frame,
+                    0.35,
+                    0,
+                    frame,
+                )
 
-        camera.stop()
+                # ==========================================
+                # UI text styling
+                # ==========================================
 
-        cv2.destroyAllWindows()
+                UI_COLOR = (
+                    255,
+                    255,
+                    255,
+                )
+
+                UI_FONT = (
+                    cv2.FONT_HERSHEY_SIMPLEX
+                )
+
+                UI_FONT_SCALE = 0.45
+
+                UI_THICKNESS = 1
+
+                # ------------------------------------------
+                # Mode
+                # ------------------------------------------
+
+                cv2.putText(
+                    frame,
+                    f"Mode: {mode}",
+                    (20, 30),
+                    UI_FONT,
+                    UI_FONT_SCALE,
+                    UI_COLOR,
+                    UI_THICKNESS,
+                    cv2.LINE_AA,
+                )
+
+                # ------------------------------------------
+                # Confidence
+                # ------------------------------------------
+
+                cv2.putText(
+                    frame,
+                    confidence_text,
+                    (20, 52),
+                    UI_FONT,
+                    UI_FONT_SCALE,
+                    UI_COLOR,
+                    UI_THICKNESS,
+                    cv2.LINE_AA,
+                )
+
+                # ------------------------------------------
+                # Status
+                # ------------------------------------------
+
+                cv2.putText(
+                    frame,
+                    f"Status: {status}",
+                    (20, 74),
+                    UI_FONT,
+                    UI_FONT_SCALE,
+                    UI_COLOR,
+                    UI_THICKNESS,
+                    cv2.LINE_AA,
+                )
+
+                # ==========================================
+                # Current recognized text
+                # ==========================================
+
+                current_text = (
+                    word_builder.get_text()
+                )
+
+                if current_text:
+
+                    display_text = (
+                        current_text
+                    )
+
+                elif last_prediction != "None":
+
+                    display_text = (
+                        last_prediction
+                    )
+
+                else:
+
+                    display_text = ""
+
+                # ==========================================
+                # Bottom-center text
+                # ==========================================
+
+                if display_text:
+
+                    font = (
+                        cv2.FONT_HERSHEY_SIMPLEX
+                    )
+
+                    font_scale = 1.0
+
+                    thickness = 2
+
+                    (
+                        text_width,
+                        text_height,
+                    ), baseline = (
+                        cv2.getTextSize(
+                            display_text,
+                            font,
+                            font_scale,
+                            thickness,
+                        )
+                    )
+
+                    frame_height, frame_width = (
+                        frame.shape[:2]
+                    )
+
+                    text_x = int(
+                        (
+                            frame_width
+                            - text_width
+                        )
+                        / 2
+                    )
+
+                    text_y = (
+                        frame_height
+                        - 35
+                    )
+
+                    # --------------------------------------
+                    # Dark outline
+                    # --------------------------------------
+
+                    cv2.putText(
+                        frame,
+                        display_text,
+                        (
+                            text_x,
+                            text_y,
+                        ),
+                        font,
+                        font_scale,
+                        (
+                            40,
+                            40,
+                            40,
+                        ),
+                        5,
+                        cv2.LINE_AA,
+                    )
+
+                    # --------------------------------------
+                    # White text
+                    # --------------------------------------
+
+                    cv2.putText(
+                        frame,
+                        display_text,
+                        (
+                            text_x,
+                            text_y,
+                        ),
+                        font,
+                        font_scale,
+                        (
+                            255,
+                            255,
+                            255,
+                        ),
+                        thickness,
+                        cv2.LINE_AA,
+                    )
+
+                # ==========================================
+                # Show frame
+                # ==========================================
+
+                cv2.imshow(
+                    WINDOW_NAME,
+                    frame
+                )
+
+                # ==========================================
+                # Keyboard input
+                # ==========================================
+
+                key = (
+                    cv2.waitKey(1)
+                    & 0xFF
+                )
+
+                # ==========================================
+                # Quit
+                # ==========================================
+
+                if key in [
+                    ord("q"),
+                    ord("Q"),
+                ]:
+
+                    break
+
+                # ==========================================
+                # SPACE
+                # ==========================================
+
+                elif key == 32:
+
+                    current_time = (
+                        time.time()
+                    )
+
+                    if (
+                        last_space_time > 0
+                        and (
+                            current_time
+                            - last_space_time
+                            <= double_space_interval
+                        )
+                    ):
+
+                        word_builder.clear()
+
+                        last_space_time = 0.0
+
+                    else:
+
+                        word_builder.space()
+
+                        last_space_time = (
+                            current_time
+                        )
+
+                # ==========================================
+                # BACKSPACE
+                # ==========================================
+
+                elif key in [
+                    8,
+                    127,
+                ]:
+
+                    word_builder.backspace()
+
+                    last_space_time = 0.0
+
+                # ==========================================
+                # Other key
+                # ==========================================
+
+                elif key != 255:
+
+                    last_space_time = 0.0
+
+        finally:
+
+            detector.close()
+
+            camera.stop()
+
+            cv2.destroyAllWindows()
+
+    except Exception as error:
+
+        # ==================================================
+        # Startup/runtime failure
+        # ==================================================
+
+        startup_ui.set_status(
+            "EchoHands could not start.",
+            str(error)
+        )
+
+        startup_ui.set_progress(
+            0.0
+        )
+
+        print(
+            "\nEchoHands startup failed:"
+        )
+
+        print(
+            error
+        )
+
+        input(
+            "\nPress ENTER to exit..."
+        )
+
+        startup_ui.close()
+
+        raise
 
 
 if __name__ == "__main__":
