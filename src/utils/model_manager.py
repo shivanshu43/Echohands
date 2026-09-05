@@ -13,6 +13,17 @@ from datetime import datetime, timezone
 APP_NAME = "EchoHands"
 
 
+def _display_version(version: str) -> str:
+    """Return a consistently formatted version for user-facing messages."""
+
+    version_text = str(version).strip()
+
+    if version_text.lower().startswith("v"):
+        return "v" + version_text[1:]
+
+    return "v" + version_text
+
+
 # ==========================================================
 # Cache
 # ==========================================================
@@ -64,6 +75,105 @@ def get_version_dir(
         get_cache_root()
         / version
     )
+
+
+def _version_tuple(
+    version: str
+):
+    """
+    Convert a semantic version such as '1.2.0'
+    into a comparable tuple.
+    """
+
+    match = re.fullmatch(
+        r"v?(\d+)\.(\d+)\.(\d+)",
+        str(version).strip()
+    )
+
+    if not match:
+        return None
+
+    return (
+        int(match.group(1)),
+        int(match.group(2)),
+        int(match.group(3)),
+    )
+
+
+def get_previous_cached_package(
+    current_version: str
+):
+    """
+    Find the newest cached model package older than
+    the current manifest version.
+
+    Returns a dictionary containing the previous version and
+    whether its local cache is still valid or has expired.
+
+    This function is informational only. It does not download,
+    delete, or modify any cached model package.
+    """
+
+    current_tuple = _version_tuple(
+        current_version
+    )
+
+    if current_tuple is None:
+        return None
+
+    cache_root = get_cache_root()
+
+    if not cache_root.exists():
+        return None
+
+    candidates = []
+
+    for version_dir in cache_root.iterdir():
+
+        if not version_dir.is_dir():
+            continue
+
+        version_tuple = _version_tuple(
+            version_dir.name
+        )
+
+        if version_tuple is None:
+            continue
+
+        if version_tuple >= current_tuple:
+            continue
+
+        candidates.append(
+            (
+                version_tuple,
+                version_dir.name,
+                version_dir
+            )
+        )
+
+    if not candidates:
+        return None
+
+    candidates.sort(
+        key=lambda item: item[0],
+        reverse=True
+    )
+
+    _, previous_version, previous_dir = (
+        candidates[0]
+    )
+
+    if is_cache_expired(
+        previous_dir
+    ):
+        status = "expired"
+    else:
+        status = "valid"
+
+    return {
+        "version": previous_version,
+        "status": status,
+    }
 
 
 def get_cache_state_path() -> Path:
@@ -881,7 +991,7 @@ def download_model_package(
 # Expiration
 # ==========================================================
 
-CACHE_EXPIRATION_DAYS = 90
+CACHE_EXPIRATION_DAYS = 1
 
 
 def is_cache_expired(
@@ -1044,6 +1154,13 @@ def prepare_models(
 
     if startup is not None:
 
+        # Show the model release that this application is preparing.
+        # The startup UI method is informational only and does not
+        # affect the model loading or cache logic.
+        startup.set_model_version(
+            version
+        )
+
         startup.initialize_models(
             [
                 info["filename"]
@@ -1056,7 +1173,7 @@ def prepare_models(
         )
 
         startup.set_status(
-            "Looking for a valid local "
+            "Checking the local cache for the required "
             "model package."
         )
 
@@ -1064,6 +1181,10 @@ def prepare_models(
         f"Checking EchoHands model package "
         f"{version}..."
     )
+
+    # ----------------------------------------------------------
+    # Current package is already cached and valid
+    # ----------------------------------------------------------
 
     if is_cached_package_valid(
         manifest
@@ -1100,10 +1221,13 @@ def prepare_models(
                 "Recognition models are ready."
             )
 
-            startup.set_status(
-                "A valid model package was "
-                "found on this computer. "
-                "No download is required."
+            startup.set_cache_status(
+                "Retrieving models from cached "
+                f"package ({_display_version(version)})"
+            )
+
+            startup.set_download_status(
+                ""
             )
 
         save_cache_state({
@@ -1120,10 +1244,106 @@ def prepare_models(
             version
         )
 
-    print(
-        "Cached model package is "
-        "missing or invalid."
+    # ----------------------------------------------------------
+    # Current package is not available/valid.
+    # Check for the newest older cached package so the startup
+    # UI can explain why a new package is being downloaded.
+    # This inspection does not change the download decision.
+    # ----------------------------------------------------------
+
+    previous_cache = (
+        get_previous_cached_package(
+            version
+        )
     )
+
+    if previous_cache is not None:
+
+        previous_version = (
+            previous_cache["version"]
+        )
+
+        previous_status = (
+            previous_cache["status"]
+        )
+
+        if previous_status == "valid":
+
+            print(
+                "Currently cached model package "
+                f"({_display_version(previous_version)})."
+            )
+
+            if startup is not None:
+
+                startup.set_task(
+                    "Updating recognition models..."
+                )
+
+                # This is the dedicated cache-status message.
+                # It intentionally remains unchanged while the new
+                # package is downloaded.
+                startup.set_cache_status(
+                    "Currently cached model package "
+                    f"({_display_version(previous_version)})"
+                )
+
+        else:
+
+            print(
+                "Previously cached model package "
+                f"({_display_version(previous_version)}) has expired."
+            )
+
+            if startup is not None:
+
+                startup.set_task(
+                    "Updating recognition models..."
+                )
+
+                # Keep the cache explanation static while the new
+                # package is downloaded.
+                startup.set_cache_status(
+                    "Previously cached model package "
+                    "has expired."
+                )
+
+    else:
+
+        print(
+            "No previous cached model package found."
+        )
+
+        if startup is not None:
+
+            startup.set_task(
+                "Downloading recognition models..."
+            )
+
+            # Keep this as the static cache explanation for the
+            # duration of the model download.
+            startup.set_cache_status(
+                "No valid cached model package was found."
+            )
+
+            startup.set_status(
+                "The required models will now be downloaded "
+                "and verified."
+            )
+
+    # ----------------------------------------------------------
+    # Remove expired local model caches before downloading the
+    # current package. Expired caches are no longer usable, so
+    # there is no reason to keep their model files on disk.
+    # This is intentionally done after the startup UI has checked
+    # the previous cache, so the UI can still report that an older
+    # cache had expired before it is removed.
+    # ----------------------------------------------------------
+    cleanup_expired_versions()
+
+    # ----------------------------------------------------------
+    # Download the package described by the current manifest.
+    # ----------------------------------------------------------
 
     if startup is not None:
 
@@ -1131,14 +1351,19 @@ def prepare_models(
             "Downloading recognition models..."
         )
 
+        startup.set_download_status(
+            "Downloading latest model package "
+            f"version {_display_version(version)}"
+        )
+
         startup.set_status(
-            "This is a one-time setup. "
-            "The models may take a few minutes "
-            "to download and verify."
+            "Preparing the required model files for "
+            "download and verification."
         )
 
     print(
-        "Downloading model package..."
+        "Downloading model package "
+        f"version {_display_version(version)}..."
     )
 
     package_dir = (

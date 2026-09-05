@@ -1,4 +1,9 @@
+import os
+import subprocess
+import sys
+import tempfile
 import time
+import textwrap
 from pathlib import Path
 
 import cv2
@@ -29,6 +34,40 @@ SIGN_GUIDE_DIR = (
 SIGN_GUIDE_IMAGE = (
     SIGN_GUIDE_DIR / "sign letters.png"
 )
+
+SIGN_DESCRIPTION_FILE = (
+    SIGN_GUIDE_DIR / "sign alphabet description.txt"
+)
+
+ASSETS_DIR = PROJECT_ROOT / "Assets"
+
+SIGN_DESCRIPTION_ICON = (
+    SIGN_GUIDE_DIR / "sign_description_icon.png"
+)
+
+VIDEO_TUTORIAL_ICON = (
+    SIGN_GUIDE_DIR / "video_tutorial_icon.png"
+)
+
+# Replace this with the YouTube tutorial URL you want to ship
+# with the public Beta release.
+YOUTUBE_VIDEO_URL = "https://youtu.be/6_gXiBe9y9A?si=LckB1iLPO6Bpk-hQ"
+_video_tutorial_process = None
+_video_tutorial_status = ""
+_video_tutorial_status_until = 0.0
+_video_tutorial_ready_marker = None
+_video_tutorial_opening_started = 0.0
+_description_process = None
+
+_description_lines = []
+_description_scroll = 0
+_description_max_scroll = 0
+
+SIGN_GUIDE_WINDOW = "EchoHands - Recognition Help"
+SIGN_DESCRIPTION_WINDOW = "EchoHands - Gesture Description"
+
+# Mouse hitboxes used by the non-blocking sign-guide window.
+_sign_guide_hitboxes = {}
 
 # ==========================================================
 # MANIFEST
@@ -64,11 +103,229 @@ def find_sign_images():
     return [SIGN_GUIDE_IMAGE]
 
 # ==========================================================
-# SIGN GUIDE
+# SIGN GUIDE / RECOGNITION HELP
 # ==========================================================
 
+def _wrap_text(text, width):
+    """Wrap text for compact OpenCV display."""
+    return textwrap.wrap(
+        text,
+        width=width,
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
+
+
+def _find_guide_icon(candidates):
+    """Find a guide icon in the sign-description or Assets folders."""
+    search_dirs = (SIGN_GUIDE_DIR, ASSETS_DIR)
+
+    for directory in search_dirs:
+        for filename in candidates:
+            path = directory / filename
+            if path.exists():
+                image = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+                if image is not None:
+                    return image
+
+    return None
+
+
+def _make_document_icon(size=78):
+    """Create a clean fallback document icon for the text resource."""
+    icon = np.zeros((size, size, 4), dtype=np.uint8)
+
+    # Transparent background.
+    icon[:, :, 3] = 0
+
+    margin = 9
+    x1, y1 = margin, margin
+    x2, y2 = size - margin, size - margin
+
+    # White document body.
+    cv2.rectangle(
+        icon,
+        (x1, y1),
+        (x2, y2),
+        (235, 235, 235, 255),
+        -1,
+        cv2.LINE_AA,
+    )
+
+    # Folded corner.
+    fold = 15
+    pts = np.array(
+        [
+            [x2 - fold, y1],
+            [x2, y1],
+            [x2, y1 + fold],
+        ],
+        dtype=np.int32,
+    )
+    cv2.fillPoly(
+        icon,
+        [pts],
+        (165, 165, 165, 255),
+    )
+
+    # Simple TXT mark.
+    cv2.putText(
+        icon,
+        "TXT",
+        (x1 + 5, y1 + 43),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.36,
+        (45, 45, 45, 255),
+        1,
+        cv2.LINE_AA,
+    )
+
+    return icon
+
+
+def _load_guide_icon(path, fallback_text):
+    """Load a guide icon from the requested path, if available."""
+    if path.exists():
+        image = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+        if image is not None:
+            return image
+
+    return None
+
+
+def _make_video_fallback_icon(size=78):
+    """Create a clean fallback play icon when no video asset is present."""
+    fallback = np.zeros((size, size, 4), dtype=np.uint8)
+    cv2.circle(
+        fallback,
+        (size // 2, size // 2),
+        31,
+        (55, 55, 55, 255),
+        -1,
+        cv2.LINE_AA,
+    )
+    pts = np.array(
+        [[31, 23], [31, 55], [55, 39]],
+        dtype=np.int32,
+    )
+    cv2.fillPoly(
+        fallback,
+        [pts],
+        (235, 235, 235, 255),
+    )
+    return fallback
+
+
+def _resize_icon(image, size=72):
+    """Resize an icon to a square display area."""
+    if image is None:
+        return None
+
+    height, width = image.shape[:2]
+    if height <= 0 or width <= 0:
+        return None
+
+    scale = min(size / width, size / height)
+    new_width = max(1, int(width * scale))
+    new_height = max(1, int(height * scale))
+
+    return cv2.resize(
+        image,
+        (new_width, new_height),
+        interpolation=(
+            cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LINEAR
+        ),
+    )
+
+
+def _place_image(canvas, image, center_x, center_y):
+    """Place BGR/BGRA image on a BGR canvas."""
+    if image is None:
+        return
+
+    if len(image.shape) == 2:
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+
+    height, width = image.shape[:2]
+    x1 = int(center_x - width / 2)
+    y1 = int(center_y - height / 2)
+    x2 = x1 + width
+    y2 = y1 + height
+
+    canvas_height, canvas_width = canvas.shape[:2]
+
+    src_x1 = max(0, -x1)
+    src_y1 = max(0, -y1)
+    src_x2 = width - max(0, x2 - canvas_width)
+    src_y2 = height - max(0, y2 - canvas_height)
+
+    if src_x1 >= src_x2 or src_y1 >= src_y2:
+        return
+
+    dst_x1 = max(0, x1)
+    dst_y1 = max(0, y1)
+    dst_x2 = dst_x1 + (src_x2 - src_x1)
+    dst_y2 = dst_y1 + (src_y2 - src_y1)
+
+    source = image[src_y1:src_y2, src_x1:src_x2]
+
+    if source.shape[2] == 4:
+        alpha = source[:, :, 3:4].astype(np.float32) / 255.0
+        foreground = source[:, :, :3].astype(np.float32)
+        background = canvas[dst_y1:dst_y2, dst_x1:dst_x2].astype(np.float32)
+        blended = foreground * alpha + background * (1.0 - alpha)
+        canvas[dst_y1:dst_y2, dst_x1:dst_x2] = blended.astype(np.uint8)
+    else:
+        canvas[dst_y1:dst_y2, dst_x1:dst_x2] = source[:, :, :3]
+
+
+def _draw_centered_text(canvas, text, y, font_scale, color, thickness=1):
+    """Draw one centered line of text."""
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    (width, height), _ = cv2.getTextSize(
+        text,
+        font,
+        font_scale,
+        thickness,
+    )
+    x = max(8, (canvas.shape[1] - width) // 2)
+    cv2.putText(
+        canvas,
+        text,
+        (x, y),
+        font,
+        font_scale,
+        color,
+        thickness,
+        cv2.LINE_AA,
+    )
+
+
+def _draw_centered_text_at_x(canvas, text, center_x, y, font_scale, color, thickness=1):
+    """Draw one line centered around a specific x-coordinate."""
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    (width, _), _ = cv2.getTextSize(
+        text,
+        font,
+        font_scale,
+        thickness,
+    )
+    x = int(center_x - width / 2)
+    cv2.putText(
+        canvas,
+        text,
+        (x, y),
+        font,
+        font_scale,
+        color,
+        thickness,
+        cv2.LINE_AA,
+    )
+
+
 def create_sign_guide():
-    """Create the sign-guide window without blocking recognition."""
+    """Create the non-blocking recognition-help window."""
+    global _sign_guide_hitboxes
 
     image_paths = find_sign_images()
 
@@ -88,55 +345,34 @@ def create_sign_guide():
         )
         return False
 
-    guide_window = "EchoHands - Sign Guide"
-
-    cv2.namedWindow(guide_window, cv2.WINDOW_NORMAL)
-
     screen_width, screen_height = get_screen_size()
 
-    # Approximately the same visual proportion as the requested
-    # fullscreen screenshot, while preserving the image aspect ratio.
-    target_width = max(400, int(screen_width * 0.24))
-    target_height = max(300, int(screen_height * 0.38))
+    # Give the reference image most of the panel width while keeping
+    # a small, consistent margin around it.
+    guide_width = min(600, max(540, int(screen_width * 0.31)))
+    guide_height = min(860, max(800, int(screen_height * 0.88)))
 
-    image_height, image_width = image.shape[:2]
-
-    if image_width <= 0 or image_height <= 0:
-        cv2.destroyWindow(guide_window)
-        return False
-
-    scale = min(
-        target_width / image_width,
-        target_height / image_height,
+    canvas = np.full(
+        (guide_height, guide_width, 3),
+        30,
+        dtype=np.uint8,
     )
 
-    display_width = max(1, int(image_width * scale))
-    display_height = max(1, int(image_height * scale))
-
-    display = cv2.resize(
-        image,
-        (display_width, display_height),
-        interpolation=(
-            cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LINEAR
-        ),
-    )
-
-    header_height = 50
-
-    canvas = cv2.copyMakeBorder(
-        display,
-        header_height,
-        0,
-        0,
-        0,
-        cv2.BORDER_CONSTANT,
-        value=(30, 30, 30),
+    # ----------------------------------------------------------
+    # Header
+    # ----------------------------------------------------------
+    cv2.rectangle(
+        canvas,
+        (0, 0),
+        (guide_width - 1, 54),
+        (38, 38, 38),
+        -1,
     )
 
     cv2.putText(
         canvas,
-        "SIGN GUIDE",
-        (14, 23),
+        "RECOGNITION HELP",
+        (16, 24),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.52,
         (255, 255, 255),
@@ -146,43 +382,297 @@ def create_sign_guide():
 
     cv2.putText(
         canvas,
-        "G / Q / ESC to close",
-        (14, 42),
+        "G / ESC to close",
+        (16, 44),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.32,
-        (185, 185, 185),
+        0.30,
+        (180, 180, 180),
         1,
         cv2.LINE_AA,
     )
 
-    cv2.imshow(guide_window, canvas)
-    cv2.resizeWindow(guide_window, canvas.shape[1], canvas.shape[0])
+    # ----------------------------------------------------------
+    # Help message
+    # ----------------------------------------------------------
+    help_text = (
+        "Having trouble getting a sign recognized? You may be "
+        "experiencing low-confidence predictions because the "
+        "gesture may not exactly match the intended sign."
+    )
 
-    guide_x = max(0, screen_width - canvas.shape[1] - 35)
+    threshold_text = (
+        "EchoHands registers a letter only when model confidence "
+        "is above 60%."
+    )
+
+    resource_text = (
+        "If a sign is difficult to recognize, use the resources "
+        "below to check the expected gesture and common mistakes."
+    )
+
+    y = 82
+    text_width = 68
+
+    for line in _wrap_text(help_text, text_width):
+        _draw_centered_text(
+            canvas,
+            line,
+            y,
+            0.36,
+            (225, 225, 225),
+            1,
+        )
+        y += 18
+
+    y += 5
+    for line in _wrap_text(threshold_text, text_width):
+        _draw_centered_text(
+            canvas,
+            line,
+            y,
+            0.36,
+            (245, 245, 245),
+            1,
+        )
+        y += 18
+
+    y += 5
+    for line in _wrap_text(resource_text, text_width):
+        _draw_centered_text(
+            canvas,
+            line,
+            y,
+            0.33,
+            (185, 185, 185),
+            1,
+        )
+        y += 17
+
+    # ----------------------------------------------------------
+    # Sign reference image — nearly full panel width
+    # ----------------------------------------------------------
+    image_top = y + 10
+    horizontal_margin = 18
+    available_width = guide_width - (horizontal_margin * 2)
+    image_height, image_width = image.shape[:2]
+
+    scale = available_width / image_width
+    display_width = max(1, int(image_width * scale))
+    display_height = max(1, int(image_height * scale))
+
+    display = cv2.resize(
+        image,
+        (display_width, display_height),
+        interpolation=cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LINEAR,
+    )
+
+    image_x = (guide_width - display_width) // 2
+    image_y = image_top
+
+    cv2.rectangle(
+        canvas,
+        (image_x - 2, image_y - 2),
+        (image_x + display_width + 1, image_y + display_height + 1),
+        (75, 75, 75),
+        1,
+    )
+
+    canvas[
+        image_y:image_y + display_height,
+        image_x:image_x + display_width,
+    ] = display
+
+    # ----------------------------------------------------------
+    # Resource icons
+    # ----------------------------------------------------------
+    icon_slot = 82
+    icon_y = image_y + display_height + 62
+
+    left_center_x = guide_width // 4
+    right_center_x = (guide_width * 3) // 4
+
+    description_icon = _load_guide_icon(
+        SIGN_DESCRIPTION_ICON,
+        "TXT",
+    )
+    if description_icon is None:
+        description_icon = _find_guide_icon(
+            [
+                "sign_description_icon.png",
+                "gesture_description_icon.png",
+                "txt_icon.png",
+                "text_icon.png",
+                "description_icon.png",
+                "txt.png",
+            ]
+        )
+    if description_icon is None:
+        description_icon = _make_document_icon()
+
+    video_icon = _load_guide_icon(
+        VIDEO_TUTORIAL_ICON,
+        "PLAY",
+    )
+    if video_icon is None:
+        video_icon = _find_guide_icon(
+            [
+                "video_tutorial_icon.png",
+                "youtube_icon.png",
+                "youtube.png",
+                "play_icon.png",
+            ]
+        )
+    if video_icon is None:
+        video_icon = _make_video_fallback_icon()
+
+    description_icon = _resize_icon(description_icon, icon_slot)
+    video_icon = _resize_icon(video_icon, icon_slot)
+
+    _place_image(canvas, description_icon, left_center_x, icon_y)
+    _place_image(canvas, video_icon, right_center_x, icon_y)
+
+    # Smaller, consistent click rings so the icons do not look
+    # oversized relative to the reference image.
+    icon_radius = 46
+    cv2.circle(
+        canvas,
+        (left_center_x, icon_y),
+        icon_radius,
+        (90, 90, 90),
+        1,
+        cv2.LINE_AA,
+    )
+    cv2.circle(
+        canvas,
+        (right_center_x, icon_y),
+        icon_radius,
+        (90, 90, 90),
+        1,
+        cv2.LINE_AA,
+    )
+
+    # ----------------------------------------------------------
+    # Resource labels — each label is centered under its own icon
+    # ----------------------------------------------------------
+    label_y = icon_y + 62
+
+    description_lines = [
+        "Avoid common mistakes",
+        "for better confidence percentage",
+    ]
+
+    video_lines = [
+        "Gesture performance",
+        "video tutorial",
+    ]
+
+    for index, line in enumerate(description_lines):
+        _draw_centered_text_at_x(
+            canvas,
+            line,
+            left_center_x,
+            label_y + index * 17,
+            0.31,
+            (210, 210, 210),
+            1,
+        )
+
+    for index, line in enumerate(video_lines):
+        _draw_centered_text_at_x(
+            canvas,
+            line,
+            right_center_x,
+            label_y + index * 17,
+            0.31,
+            (210, 210, 210),
+            1,
+        )
+
+    # ----------------------------------------------------------
+    # Tutorial status
+    # ----------------------------------------------------------
+    if _video_tutorial_status:
+        _draw_centered_text(
+            canvas,
+            _video_tutorial_status,
+            guide_height - 18,
+            0.31,
+            (205, 205, 205),
+            1,
+        )
+
+    _sign_guide_hitboxes = {
+        "description": (
+            left_center_x - 62,
+            icon_y - 62,
+            left_center_x + 62,
+            label_y + 34,
+        ),
+        "video": (
+            right_center_x - 62,
+            icon_y - 62,
+            right_center_x + 62,
+            label_y + 34,
+        ),
+    }
+
+    cv2.namedWindow(
+        SIGN_GUIDE_WINDOW,
+        cv2.WINDOW_NORMAL,
+    )
+
+    cv2.setMouseCallback(
+        SIGN_GUIDE_WINDOW,
+        sign_guide_mouse_callback,
+    )
+
+    cv2.imshow(
+        SIGN_GUIDE_WINDOW,
+        canvas,
+    )
+
+    cv2.resizeWindow(
+        SIGN_GUIDE_WINDOW,
+        guide_width,
+        guide_height,
+    )
+
+    guide_x = max(
+        0,
+        screen_width - guide_width - 35,
+    )
     guide_y = 35
 
     try:
-        cv2.moveWindow(guide_window, guide_x, guide_y)
+        cv2.moveWindow(
+            SIGN_GUIDE_WINDOW,
+            guide_x,
+            guide_y,
+        )
     except Exception:
         pass
 
     return True
 
-
 def close_sign_guide():
-    """Safely close the sign-guide window."""
+    """Safely close the recognition-help window and text resource."""
+    global _sign_guide_hitboxes
+    _sign_guide_hitboxes = {}
+
     try:
-        cv2.destroyWindow("EchoHands - Sign Guide")
+        cv2.destroyWindow(SIGN_GUIDE_WINDOW)
     except Exception:
         pass
 
+    close_sign_description()
+
 
 def sign_guide_is_open():
-    """Return True while the guide window is visible."""
+    """Return True while the recognition-help window is visible."""
     try:
         return (
             cv2.getWindowProperty(
-                "EchoHands - Sign Guide",
+                SIGN_GUIDE_WINDOW,
                 cv2.WND_PROP_VISIBLE,
             ) >= 1
         )
@@ -190,9 +680,414 @@ def sign_guide_is_open():
         return False
 
 
+def _guide_hitbox_contains(x, y, box):
+    x1, y1, x2, y2 = box
+    return (
+        x1 <= x <= x2
+        and y1 <= y <= y2
+    )
+
+
+def create_sign_description():
+    """Open the sign-alphabet description in a small scrollable window."""
+    global _description_process
+
+    if _description_process is not None:
+        if _description_process.poll() is None:
+            return True
+        _description_process = None
+
+    if not SIGN_DESCRIPTION_FILE.exists():
+        print(
+            "Sign alphabet description: file not found.\n"
+            f"Expected:\n{SIGN_DESCRIPTION_FILE}"
+        )
+        return False
+
+    # Use a separate Tkinter process so the text window has a real native
+    # Text widget + Scrollbar and remains fully interactive without blocking
+    # the OpenCV recognition loop.
+    helper_code = """
+import sys
+import tkinter as tk
+from tkinter import ttk
+from pathlib import Path
+
+file_path = Path(sys.argv[1])
+
+try:
+    text = file_path.read_text(encoding='utf-8')
+except Exception as exc:
+    text = f'Unable to read the sign alphabet description file.\\n\\n{exc}'
+
+root = tk.Tk()
+root.title('EchoHands - Sign Alphabet Description')
+root.geometry('700x560')
+root.minsize(520, 360)
+root.configure(bg='#1e1e1e')
+
+try:
+    root.attributes('-topmost', False)
+except Exception:
+    pass
+
+header = tk.Frame(root, bg='#262626', height=62)
+header.pack(fill='x')
+header.pack_propagate(False)
+
+tk.Label(
+    header,
+    text='SIGN ALPHABET DESCRIPTION',
+    font=('Segoe UI', 14),
+    fg='#ffffff',
+    bg='#262626',
+    anchor='w',
+).pack(fill='x', padx=18, pady=(10, 0))
+
+tk.Label(
+    header,
+    text='Scroll to read  |  Close the window when finished',
+    font=('Segoe UI', 9),
+    fg='#aaaaaa',
+    bg='#262626',
+    anchor='w',
+).pack(fill='x', padx=18, pady=(1, 0))
+
+content = tk.Frame(root, bg='#1e1e1e')
+content.pack(fill='both', expand=True, padx=14, pady=14)
+
+scrollbar = ttk.Scrollbar(content, orient='vertical')
+scrollbar.pack(side='right', fill='y')
+
+text_widget = tk.Text(
+    content,
+    wrap='word',
+    yscrollcommand=scrollbar.set,
+    bg='#1e1e1e',
+    fg='#e1e1e1',
+    insertbackground='#ffffff',
+    selectbackground='#4a4a4a',
+    selectforeground='#ffffff',
+    relief='flat',
+    borderwidth=0,
+    highlightthickness=0,
+    font=('Segoe UI', 10),
+    padx=8,
+    pady=6,
+)
+text_widget.pack(side='left', fill='both', expand=True)
+scrollbar.config(command=text_widget.yview)
+
+text_widget.insert('1.0', text)
+
+# Keep the document read-only without disabling the Text widget. A disabled
+# Text widget can prevent normal focus/scroll interaction on some Windows Tk
+# builds. Blocking edit keys preserves the native scrollbar and scrolling.
+def block_edit(event):
+    return 'break'
+
+text_widget.bind('<KeyPress>', block_edit)
+text_widget.bind('<Control-KeyPress>', block_edit)
+text_widget.bind('<Control-Shift-KeyPress>', block_edit)
+
+def on_mousewheel(event):
+    if event.delta:
+        steps = max(1, abs(int(event.delta / 120)))
+        direction = -1 if event.delta > 0 else 1
+        text_widget.yview_scroll(direction * steps, 'units')
+    return 'break'
+
+# Bind scrolling to the text, its container, and the root window. This makes
+# the mouse wheel work even when the pointer is over the window background.
+text_widget.bind('<MouseWheel>', on_mousewheel)
+content.bind('<MouseWheel>', on_mousewheel)
+root.bind('<MouseWheel>', on_mousewheel)
+
+# Linux-style wheel events.
+text_widget.bind('<Button-4>', lambda event: (text_widget.yview_scroll(-3, 'units'), 'break')[1])
+text_widget.bind('<Button-5>', lambda event: (text_widget.yview_scroll(3, 'units'), 'break')[1])
+content.bind('<Button-4>', lambda event: (text_widget.yview_scroll(-3, 'units'), 'break')[1])
+content.bind('<Button-5>', lambda event: (text_widget.yview_scroll(3, 'units'), 'break')[1])
+root.bind('<Button-4>', lambda event: (text_widget.yview_scroll(-3, 'units'), 'break')[1])
+root.bind('<Button-5>', lambda event: (text_widget.yview_scroll(3, 'units'), 'break')[1])
+
+# Keep keyboard navigation available.
+text_widget.focus_set()
+root.bind('<Escape>', lambda event: root.destroy())
+text_widget.yview_moveto(0.0)
+
+root.mainloop()
+""".strip()
+
+    try:
+        creationflags = 0
+        if sys.platform.startswith("win"):
+            creationflags = getattr(
+                subprocess,
+                "CREATE_NO_WINDOW",
+                0,
+            )
+
+        _description_process = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                helper_code,
+                str(SIGN_DESCRIPTION_FILE),
+            ],
+            creationflags=creationflags,
+        )
+        return True
+    except Exception as exc:
+        _description_process = None
+        print(
+            "Sign alphabet description: unable to open text window.\n"
+            f"Error: {exc}"
+        )
+        return False
+
+
+def close_sign_description():
+    """Safely close the separate sign-description window."""
+    global _description_process
+
+    if _description_process is None:
+        return
+
+    try:
+        if _description_process.poll() is None:
+            _description_process.terminate()
+            try:
+                _description_process.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                _description_process.kill()
+    except Exception:
+        pass
+    finally:
+        _description_process = None
+
+
+def sign_description_is_open():
+    """Return True while the sign-description process is running."""
+    global _description_process
+
+    if _description_process is None:
+        return False
+
+    if _description_process.poll() is None:
+        return True
+
+    _description_process = None
+    return False
+
+
+def poll_video_tutorial_status():
+    """Clear temporary tutorial status messages automatically."""
+    global _video_tutorial_status
+    global _video_tutorial_status_until
+    global _video_tutorial_ready_marker
+    global _video_tutorial_opening_started
+
+    now = time.monotonic()
+
+    if _video_tutorial_ready_marker:
+        marker = Path(_video_tutorial_ready_marker)
+        if marker.exists():
+            try:
+                marker.unlink()
+            except Exception:
+                pass
+            _video_tutorial_ready_marker = None
+            _video_tutorial_opening_started = 0.0
+            _video_tutorial_status = ""
+            _video_tutorial_status_until = 0.0
+            create_sign_guide()
+            return
+
+    # If pywebview does not emit its ``shown`` event on a particular backend,
+    # do not leave the opening message stuck forever. Once the child process
+    # has remained alive for a few seconds, the tutorial window has had ample
+    # time to initialize, so the status can safely be cleared.
+    if (
+        _video_tutorial_status == "Opening gesture tutorial..."
+        and _video_tutorial_opening_started > 0.0
+        and now - _video_tutorial_opening_started >= 5.0
+    ):
+        _video_tutorial_status = ""
+        _video_tutorial_opening_started = 0.0
+        _video_tutorial_status_until = 0.0
+        create_sign_guide()
+        return
+
+    # If the tutorial process died before its native window was shown, report
+    # a launch failure rather than leaving the opening message on screen.
+    if (
+        _video_tutorial_status == "Opening gesture tutorial..."
+        and _video_tutorial_process is not None
+        and _video_tutorial_process.poll() is not None
+    ):
+        _video_tutorial_status = "Unable to open gesture tutorial."
+        _video_tutorial_opening_started = 0.0
+        _video_tutorial_status_until = now + 3.0
+        create_sign_guide()
+        return
+
+    # Temporary messages such as "already open" should disappear on their
+    # own instead of waiting for another video-button click.
+    if (
+        _video_tutorial_status
+        and _video_tutorial_status_until > 0
+        and now >= _video_tutorial_status_until
+    ):
+        _video_tutorial_status = ""
+        _video_tutorial_status_until = 0.0
+        create_sign_guide()
+
+
+def open_video_tutorial():
+    """Open the configured YouTube tutorial without opening duplicates."""
+    global _video_tutorial_process
+    global _video_tutorial_status
+    global _video_tutorial_status_until
+    global _video_tutorial_ready_marker
+    global _video_tutorial_opening_started
+
+    # If the previous tutorial process is still alive, do not create another
+    # video window. Give the user a short-lived confirmation instead.
+    if _video_tutorial_process is not None:
+        if _video_tutorial_process.poll() is None:
+            _video_tutorial_status = "Gesture tutorial is already open."
+            _video_tutorial_opening_started = 0.0
+            _video_tutorial_status_until = time.monotonic() + 1.8
+            create_sign_guide()
+            return True
+
+        _video_tutorial_process = None
+        _video_tutorial_ready_marker = None
+        _video_tutorial_opening_started = 0.0
+
+    if not YOUTUBE_VIDEO_URL:
+        _video_tutorial_status = "Gesture tutorial URL is not configured."
+        _video_tutorial_status_until = time.monotonic() + 3.0
+        create_sign_guide()
+        print("Gesture tutorial: no YouTube URL has been configured yet.")
+        return False
+
+    # Show immediate feedback while the separate webview process starts.
+    _video_tutorial_status = "Opening gesture tutorial..."
+    _video_tutorial_status_until = 0.0
+    _video_tutorial_opening_started = time.monotonic()
+    create_sign_guide()
+
+    marker_path = (
+        Path(tempfile.gettempdir())
+        / f"echohands_tutorial_{os.getpid()}_{int(time.time() * 1000)}.ready"
+    )
+    _video_tutorial_ready_marker = str(marker_path)
+
+    helper_code = """
+import sys
+from pathlib import Path
+import webview
+
+url = sys.argv[1]
+marker = Path(sys.argv[2])
+
+window = webview.create_window(
+    'EchoHands - Gesture Tutorial',
+    url,
+    width=760,
+    height=500,
+    resizable=True,
+)
+
+# This fires when the native webview window has actually been shown.
+def on_shown():
+    try:
+        marker.write_text('shown', encoding='utf-8')
+    except Exception:
+        pass
+
+window.events.shown += on_shown
+webview.start()
+""".strip()
+
+    try:
+        creationflags = 0
+        if sys.platform.startswith("win"):
+            creationflags = getattr(
+                subprocess,
+                "CREATE_NO_WINDOW",
+                0,
+            )
+
+        _video_tutorial_process = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                helper_code,
+                YOUTUBE_VIDEO_URL,
+                str(marker_path),
+            ],
+            creationflags=creationflags,
+        )
+
+        return True
+
+    except Exception as exc:
+        _video_tutorial_process = None
+        _video_tutorial_ready_marker = None
+        _video_tutorial_opening_started = 0.0
+        _video_tutorial_status = "Unable to open gesture tutorial."
+        _video_tutorial_status_until = time.monotonic() + 3.0
+        create_sign_guide()
+        print(
+            "Gesture tutorial: unable to open embedded video window.\n"
+            f"Error: {exc}"
+        )
+        return False
+
+def handle_sign_guide_click(x, y):
+    """Handle clicks on the two recognition-help resources."""
+    if _guide_hitbox_contains(
+        x,
+        y,
+        _sign_guide_hitboxes.get(
+            "description",
+            (-1, -1, -1, -1),
+        ),
+    ):
+        if not sign_description_is_open():
+            create_sign_description()
+        return True
+
+    if _guide_hitbox_contains(
+        x,
+        y,
+        _sign_guide_hitboxes.get(
+            "video",
+            (-1, -1, -1, -1),
+        ),
+    ):
+        open_video_tutorial()
+        return True
+
+    return False
+
+
+
+
+def sign_guide_mouse_callback(event, x, y, flags, param):
+    """Mouse callback for the two clickable guide resources."""
+    if event != cv2.EVENT_LBUTTONUP:
+        return
+
+    handle_sign_guide_click(x, y)
+
 # ==========================================================
 # SCREEN SIZE
 # ==========================================================
+
 
 def get_screen_size():
 
@@ -1313,31 +2208,17 @@ def main():
 
         nonlocal sign_guide_requested
 
-        if (
-            event
-            != cv2.EVENT_LBUTTONUP
-        ):
-
+        if event != cv2.EVENT_LBUTTONUP:
             return
 
+        # Clicks on the main interface open/toggle the help panel.
         if param is None:
             return
 
-        source_width = (
-            param["source_width"]
-        )
-
-        source_height = (
-            param["source_height"]
-        )
-
-        display_width = (
-            param["display_width"]
-        )
-
-        display_height = (
-            param["display_height"]
-        )
+        source_width = param["source_width"]
+        source_height = param["source_height"]
+        display_width = param["display_width"]
+        display_height = param["display_height"]
 
         if info_button_clicked(
             x,
@@ -1347,7 +2228,6 @@ def main():
             display_width,
             display_height,
         ):
-
             sign_guide_requested = True
 
     mouse_state = {
@@ -1402,6 +2282,10 @@ def main():
     try:
 
         while True:
+
+            # Remove the tutorial opening message as soon as the webview
+            # process reports that its native window has been shown.
+            poll_video_tutorial_status()
 
             # ==================================================
             # GET FRAME
@@ -2000,6 +2884,11 @@ def main():
                 if not sign_guide_is_open():
                     sign_guide_window_exists = False
                     guide_open = False
+                    close_sign_description()
+
+            # --------------------------------------------------
+            # Resource window may be closed independently.
+            # --------------------------------------------------
 
             # ==================================================
             # KEYBOARD
@@ -2008,6 +2897,11 @@ def main():
             key = (
                 cv2.waitKeyEx(1)
             )
+
+            # Process tutorial status again immediately after OpenCV handles
+            # the current mouse/keyboard event. This guarantees short-lived
+            # messages such as 'already open' expire without another click.
+            poll_video_tutorial_status()
 
             if key == -1:
 
@@ -2018,6 +2912,22 @@ def main():
                 key = (
                     key & 0xFF
                 )
+
+            # ==================================================
+            # ESC / GUIDE RESOURCE CLOSE
+            # ==================================================
+
+            if key == 27:
+
+                if sign_guide_window_exists:
+                    close_sign_guide()
+                    sign_guide_window_exists = False
+                    guide_open = False
+
+                else:
+                    close_sign_description()
+
+                continue
 
             # ==================================================
             # QUIT

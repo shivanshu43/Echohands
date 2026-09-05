@@ -38,6 +38,10 @@ class StartupUI:
         self.info_label = None
         self.spinner_label = None
 
+        self.model_version_label = None
+        self.cache_status_label = None
+        self.download_status_label = None
+
         self.progress_canvas = None
         self.progress_bar = None
         self.progress_text = None
@@ -87,7 +91,7 @@ class StartupUI:
         )
 
         width = 780
-        height = 590
+        height = 680
 
         screen_width = (
             self.root.winfo_screenwidth()
@@ -219,11 +223,21 @@ class StartupUI:
         )
 
         # ======================================================
-        # MODEL SETUP TITLE
+        # MODEL SETUP HEADER
         # ======================================================
 
-        tk.Label(
+        model_header = tk.Frame(
             main,
+            bg="#151515"
+        )
+
+        model_header.pack(
+            fill="x",
+            pady=(0, 6)
+        )
+
+        tk.Label(
+            model_header,
             text="MODEL SETUP",
             font=(
                 "Segoe UI Semibold",
@@ -233,6 +247,59 @@ class StartupUI:
             bg="#151515",
             anchor="w"
         ).pack(
+            side="left"
+        )
+
+        self.model_version_label = tk.Label(
+            model_header,
+            text="Latest Model Version (from manifest): --",
+            font=(
+                "Segoe UI",
+                9
+            ),
+            fg="#888888",
+            bg="#151515",
+            anchor="e"
+        )
+
+        self.model_version_label.pack(
+            side="right"
+        )
+
+        self.cache_status_label = tk.Label(
+            main,
+            text="",
+            font=(
+                "Segoe UI Semibold",
+                9
+            ),
+            fg="#aaaaaa",
+            bg="#151515",
+            justify="left",
+            anchor="w",
+            wraplength=self.CONTENT_WIDTH - 20
+        )
+
+        self.cache_status_label.pack(
+            fill="x",
+            pady=(0, 2)
+        )
+
+        self.download_status_label = tk.Label(
+            main,
+            text="",
+            font=(
+                "Segoe UI Semibold",
+                9
+            ),
+            fg="#dddddd",
+            bg="#151515",
+            justify="left",
+            anchor="w",
+            wraplength=self.CONTENT_WIDTH - 20
+        )
+
+        self.download_status_label.pack(
             fill="x",
             pady=(0, 6)
         )
@@ -456,6 +523,32 @@ class StartupUI:
     # UI QUEUE
     # ==========================================================
 
+    def _flush_ui_queue(self):
+
+        if not self.running:
+            return
+
+        try:
+
+            while True:
+
+                func, args, kwargs = (
+                    self._ui_queue.get_nowait()
+                )
+
+                func(
+                    *args,
+                    **kwargs
+                )
+
+        except queue.Empty:
+
+            pass
+
+        except tk.TclError:
+
+            self.running = False
+
     def _process_queue(self):
 
         if (
@@ -611,6 +704,12 @@ class StartupUI:
 
             return
 
+        # The model worker can finish faster than the 50 ms UI queue
+        # polling interval (especially when the package is already cached).
+        # Apply any pending UI updates before finishing so the final cache
+        # message is actually rendered instead of being skipped.
+        self._flush_ui_queue()
+
         self.finish()
 
     # ==========================================================
@@ -686,6 +785,109 @@ class StartupUI:
             self.info_label.config(
                 text=message
             )
+
+    # ==========================================================
+    # MODEL VERSION
+    # ==========================================================
+
+    def set_model_version(
+        self,
+        version
+    ):
+
+        self._call_ui(
+            self._set_model_version,
+            version
+        )
+
+    def _set_model_version(
+        self,
+        version
+    ):
+
+        if (
+            not self.running
+            or self.model_version_label is None
+        ):
+            return
+
+        version_text = str(
+            version
+        )
+
+        if version_text[:1].lower() == "v":
+            version_text = "v" + version_text[1:]
+        else:
+            version_text = "v" + version_text
+
+        self.model_version_label.config(
+            text=(
+                "Latest Model Version (from manifest): "
+                f"{version_text}"
+            )
+        )
+
+    # ==========================================================
+    # CACHE STATUS
+    # Dedicated static cache explanation. It is never overwritten by
+    # normal startup/camera status updates.
+    # ==========================================================
+
+    def set_cache_status(
+        self,
+        message
+    ):
+
+        self._call_ui(
+            self._set_cache_status,
+            message
+        )
+
+    def _set_cache_status(
+        self,
+        message
+    ):
+
+        if (
+            not self.running
+            or self.cache_status_label is None
+        ):
+            return
+
+        self.cache_status_label.config(
+            text=message
+        )
+
+    # ==========================================================
+    # DOWNLOAD STATUS
+    # Dedicated static update/download explanation. It is not
+    # overwritten by normal startup/camera status updates.
+    # ==========================================================
+
+    def set_download_status(
+        self,
+        message
+    ):
+
+        self._call_ui(
+            self._set_download_status,
+            message
+        )
+
+    def _set_download_status(
+        self,
+        message
+    ):
+
+        if (
+            not self.running
+            or self.download_status_label is None
+        ):
+            return
+
+        self.download_status_label.config(
+            text=message
+        )
 
     # ==========================================================
     # MODEL INITIALIZATION
@@ -1246,8 +1448,14 @@ class StartupUI:
             )
         )
 
+        # The cache-status line is independent of the normal startup
+        # status and is intentionally not changed here. Keep the
+        # startup window open briefly so the final cache message is
+        # readable even when everything initialized very quickly.
+        self._flush_ui_queue()
+
         self.root.after(
-            450,
+            1000,
             self.close
         )
 

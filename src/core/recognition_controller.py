@@ -24,76 +24,57 @@ class RecognitionController:
         dynamic_confidence_threshold=0.85,
         static_confidence_threshold=0.60,
 
-        # Strong static prediction protects against accidental
-        # dynamic activation.
-        dynamic_static_guard_threshold=0.70,
-
         # ======================================================
-        # Static smoothing
-        # ======================================================
-
-        smoothing_window=5,
-
-        # ======================================================
-        # Initialization
-        # ======================================================
-
-        initialization_frames=8,
-
-        # ======================================================
-        # Dynamic movement
-        # ======================================================
-
-        # Raw landmark movement threshold.
-        #
-        # This is intentionally not the old 0.045 threshold that
-        # was applied to the smoothed 70-feature representation.
-        dynamic_motion_threshold=0.030,
-
-        # Number of consecutive meaningful movement observations
-        # required before entering DYNAMIC.
-        dynamic_start_frames=6,
-
-        # Short natural gaps are tolerated.
-        dynamic_gap_frames=3,
-
-        # Recent movement window.
-        dynamic_window_frames=10,
-
-        # Number of moving observations required in that window.
-        dynamic_required_motion_frames=6,
-
-        # ======================================================
-        # Static prediction stability
+        # Static prediction
         # ======================================================
 
         static_prediction_frames=4,
 
-        # ======================================================
-        # Gesture lock
-        # ======================================================
-
-        # Number of frames required for a DIFFERENT static label
-        # to prove that the user actually changed gesture.
-        unlock_label_frames=5,
-
-        # ======================================================
-        # M / N stabilization
-        # ======================================================
-
-        mn_confidence_threshold=0.45,
+        # M/N commonly have lower confidence than easier
+        # static signs. Do not accept a single weak frame.
+        mn_confidence_threshold=0.40,
         mn_window_frames=8,
         mn_required_votes=5,
-        mn_confirmation_frames=3,
 
         # ======================================================
-        # Dynamic lock escape
+        # Dynamic trajectory
         # ======================================================
 
-        # Require more evidence when trying to leave a committed
-        # static gesture through physical movement.
-        locked_dynamic_window_frames=12,
-        locked_dynamic_required_frames=8,
+        # Minimum frame-to-frame movement of the index fingertip
+        # relative to the wrist.
+        dynamic_step_threshold=0.012,
+
+        # Minimum total travelled distance before dynamic mode
+        # can start.
+        dynamic_path_threshold=0.075,
+
+        # Minimum displacement from the point where the candidate
+        # started. Prevents pure back-and-forth jitter from being
+        # considered a gesture.
+        dynamic_net_displacement_threshold=0.030,
+
+        # Number of meaningful trajectory steps required.
+        dynamic_start_frames=5,
+
+        # Maximum low-motion gap while building a trajectory.
+        dynamic_gap_frames=3,
+
+        # Number of recent trajectory samples examined.
+        dynamic_window_frames=10,
+
+        # ======================================================
+        # Static lock
+        # ======================================================
+
+        # A different static prediction must persist before
+        # unlocking the committed gesture.
+        unlock_change_frames=5,
+
+        # ======================================================
+        # Hand initialization
+        # ======================================================
+
+        initialization_frames=8,
     ):
 
         self.static_predictor = static_predictor
@@ -104,7 +85,7 @@ class RecognitionController:
         # ======================================================
 
         self.sequence_detector = SequenceDetector(
-            start_threshold=dynamic_motion_threshold
+            start_threshold=dynamic_step_threshold
         )
 
         # ======================================================
@@ -119,44 +100,8 @@ class RecognitionController:
             static_confidence_threshold
         )
 
-        self.dynamic_static_guard_threshold = (
-            dynamic_static_guard_threshold
-        )
-
-        self.smoothing_window = (
-            smoothing_window
-        )
-
-        self.initialization_frames = (
-            initialization_frames
-        )
-
-        self.dynamic_motion_threshold = (
-            dynamic_motion_threshold
-        )
-
-        self.dynamic_start_frames = (
-            dynamic_start_frames
-        )
-
-        self.dynamic_gap_frames = (
-            dynamic_gap_frames
-        )
-
-        self.dynamic_window_frames = (
-            dynamic_window_frames
-        )
-
-        self.dynamic_required_motion_frames = (
-            dynamic_required_motion_frames
-        )
-
         self.static_prediction_frames = (
             static_prediction_frames
-        )
-
-        self.unlock_label_frames = (
-            unlock_label_frames
         )
 
         self.mn_confidence_threshold = (
@@ -171,16 +116,36 @@ class RecognitionController:
             mn_required_votes
         )
 
-        self.mn_confirmation_frames = (
-            mn_confirmation_frames
+        self.dynamic_step_threshold = (
+            dynamic_step_threshold
         )
 
-        self.locked_dynamic_window_frames = (
-            locked_dynamic_window_frames
+        self.dynamic_path_threshold = (
+            dynamic_path_threshold
         )
 
-        self.locked_dynamic_required_frames = (
-            locked_dynamic_required_frames
+        self.dynamic_net_displacement_threshold = (
+            dynamic_net_displacement_threshold
+        )
+
+        self.dynamic_start_frames = (
+            dynamic_start_frames
+        )
+
+        self.dynamic_gap_frames = (
+            dynamic_gap_frames
+        )
+
+        self.dynamic_window_frames = (
+            dynamic_window_frames
+        )
+
+        self.unlock_change_frames = (
+            unlock_change_frames
+        )
+
+        self.initialization_frames = (
+            initialization_frames
         )
 
         # ======================================================
@@ -190,71 +155,55 @@ class RecognitionController:
         self.mode = self.NONE
 
         # ======================================================
-        # Feature state
+        # Previous features
         # ======================================================
 
-        self.previous_raw_features = None
         self.previous_features = None
 
-        self.feature_history = deque(
-            maxlen=self.smoothing_window
-        )
+        # ======================================================
+        # Feature smoothing
+        # ======================================================
 
-        # Recent raw landmark movement values.
-        self.raw_motion_history = deque(
-            maxlen=self.dynamic_window_frames
+        self.feature_history = deque(
+            maxlen=5
         )
 
         # ======================================================
-        # Initialization
+        # Hand initialization
         # ======================================================
 
         self.initialization_count = 0
 
         # ======================================================
-        # Gesture locking
+        # Gesture lock
         # ======================================================
 
         self.locked_features = None
 
-        # ------------------------------------------------------
-        # THIS is the important new state.
-        #
-        # The identity of the committed gesture is stored
-        # separately from its feature representation.
-        # ------------------------------------------------------
-
+        # IMPORTANT:
+        # The committed label is the identity of the lock.
         self.locked_label = None
 
-        # Different-label evidence while locked.
         self.unlock_candidate = None
         self.unlock_candidate_count = 0
 
-        # Dynamic movement evidence while locked.
-        self.locked_motion_history = deque(
-            maxlen=self.locked_dynamic_window_frames
-        )
-
         # ======================================================
-        # Static prediction
+        # Static prediction tracking
         # ======================================================
 
         self.static_candidate = None
         self.static_candidate_count = 0
 
         # ======================================================
-        # M / N history
+        # M/N tracking
         # ======================================================
 
-        self.mn_prediction_history = deque(
+        self.mn_history = deque(
             maxlen=self.mn_window_frames
         )
 
-        self.mn_stable_prediction = None
-        self.mn_stable_count = 0
-
         # ======================================================
-        # Dynamic candidate
+        # Dynamic trajectory tracking
         # ======================================================
 
         self.dynamic_motion_count = 0
@@ -266,15 +215,22 @@ class RecognitionController:
             maxlen=self.dynamic_window_frames
         )
 
+        # Index fingertip trajectory.
+        self.dynamic_start_point = None
+        self.dynamic_current_point = None
+
+        self.dynamic_path_length = 0.0
+        self.dynamic_net_displacement = 0.0
+
         # ======================================================
-        # Last visible prediction
+        # Last prediction
         # ======================================================
 
         self.last_prediction = None
         self.last_confidence = 0.0
 
     # ==========================================================
-    # Static feature smoothing
+    # FEATURE SMOOTHING
     # ==========================================================
 
     def _smooth_features(
@@ -304,306 +260,193 @@ class RecognitionController:
         )
 
     # ==========================================================
-    # Raw landmark motion
-    # ==========================================================
-
-    def _calculate_raw_motion(
-        self,
-        current_features
-    ):
-
-        if (
-            current_features is None
-            or self.previous_raw_features is None
-        ):
-
-            return 0.0
-
-        current = np.asarray(
-            current_features,
-            dtype=np.float32
-        )
-
-        previous = np.asarray(
-            self.previous_raw_features,
-            dtype=np.float32
-        )
-
-        if current.shape != previous.shape:
-
-            return 0.0
-
-        # ------------------------------------------------------
-        # First 42 values are the normalized landmark coordinates.
-        # The remaining 28 values are geometric features.
-        #
-        # Dynamic movement uses only the landmark coordinates.
-        # ------------------------------------------------------
-
-        if (
-            current.ndim != 1
-            or current.shape[0] < 42
-            or previous.shape[0] < 42
-        ):
-
-            return 0.0
-
-        current_landmarks = current[:42]
-        previous_landmarks = previous[:42]
-
-        difference = np.abs(
-            current_landmarks
-            - previous_landmarks
-        )
-
-        # Median is deliberately used instead of mean.
-        #
-        # A few noisy landmarks should not dominate the entire
-        # motion measurement.
-        return float(
-            np.median(difference)
-        )
-
-    # ==========================================================
-    # Locked-feature difference
+    # RECONSTRUCT NORMALIZED LANDMARKS
     #
-    # This is NO LONGER used to unlock a gesture.
+    # The first 42 features are:
     #
-    # It is retained only as diagnostic/internal information.
+    # x0, y0, x1, y1, ... x20, y20
+    #
+    # They are already wrist-relative and scale-normalized by
+    # LandmarkProcessor.
     # ==========================================================
 
-    def _calculate_change_from_locked(
+    def _get_landmarks(
         self,
         features
     ):
 
-        if (
-            features is None
-            or self.locked_features is None
-        ):
+        if features is None:
 
-            return 0.0
+            return None
 
-        current = np.asarray(
+        values = np.asarray(
             features,
             dtype=np.float32
         )
 
-        locked = np.asarray(
-            self.locked_features,
-            dtype=np.float32
+        if (
+            values.ndim != 1
+            or values.shape[0] < 42
+        ):
+
+            return None
+
+        landmarks = values[:42].reshape(
+            21,
+            2
         )
 
-        if current.shape != locked.shape:
+        return landmarks
 
-            return 0.0
+    # ==========================================================
+    # INDEX FINGERTIP POSITION
+    #
+    # Landmark 8 = index fingertip.
+    #
+    # Because the feature representation is wrist-relative,
+    # this gives us the index-finger trajectory relative to
+    # the hand itself.
+    #
+    # This is much more useful for J/Z than measuring changes
+    # across all 70 features.
+    # ==========================================================
 
-        return float(
-            np.mean(
-                np.abs(
-                    current - locked
+    def _get_index_tip(
+        self,
+        features
+    ):
+
+        landmarks = self._get_landmarks(
+            features
+        )
+
+        if landmarks is None:
+
+            return None
+
+        return landmarks[8].copy()
+
+    # ==========================================================
+    # TRAJECTORY UPDATE
+    # ==========================================================
+
+    def _update_trajectory(
+        self,
+        features
+    ):
+
+        point = self._get_index_tip(
+            features
+        )
+
+        if point is None:
+
+            return {
+                "step": 0.0,
+                "moving": False,
+                "path": self.dynamic_path_length,
+                "net": self.dynamic_net_displacement,
+            }
+
+        # ------------------------------------------------------
+        # First trajectory point
+        # ------------------------------------------------------
+
+        if self.dynamic_current_point is None:
+
+            self.dynamic_current_point = (
+                point.copy()
+            )
+
+            if self.dynamic_start_point is None:
+
+                self.dynamic_start_point = (
+                    point.copy()
+                )
+
+            return {
+                "step": 0.0,
+                "moving": False,
+                "path": self.dynamic_path_length,
+                "net": self.dynamic_net_displacement,
+            }
+
+        # ------------------------------------------------------
+        # Frame-to-frame index fingertip movement
+        # ------------------------------------------------------
+
+        step = float(
+            np.linalg.norm(
+                point
+                - self.dynamic_current_point
+            )
+        )
+
+        moving = (
+            step
+            >= self.dynamic_step_threshold
+        )
+
+        # ------------------------------------------------------
+        # Only meaningful movement contributes to path length.
+        #
+        # Tiny movements are treated as jitter rather than
+        # accumulating indefinitely.
+        # ------------------------------------------------------
+
+        if moving:
+
+            self.dynamic_path_length += step
+
+            self.dynamic_motion_count += 1
+
+            self.dynamic_gap_count = 0
+
+        else:
+
+            self.dynamic_gap_count += 1
+
+        # ------------------------------------------------------
+        # Current displacement from trajectory start.
+        # ------------------------------------------------------
+
+        if self.dynamic_start_point is not None:
+
+            self.dynamic_net_displacement = float(
+                np.linalg.norm(
+                    point
+                    - self.dynamic_start_point
                 )
             )
+
+        self.dynamic_current_point = (
+            point.copy()
         )
 
-    # ==========================================================
-    # Static candidate
-    # ==========================================================
+        self.dynamic_motion_history.append(
+            moving
+        )
 
-    def _update_static_candidate(
-        self,
-        prediction
-    ):
-
+        # Keep trajectory state bounded.
         if (
-            prediction is not None
-            and prediction == self.static_candidate
+            len(self.dynamic_motion_history)
+            > self.dynamic_window_frames
         ):
 
-            self.static_candidate_count += 1
+            self.dynamic_motion_history.popleft()
 
-        else:
-
-            self.static_candidate = prediction
-            self.static_candidate_count = 1
-
-    # ==========================================================
-    # M/N history
-    # ==========================================================
-
-    def _update_mn_history(
-        self,
-        prediction,
-        confidence
-    ):
-
-        self.mn_prediction_history.append(
-            (
-                prediction,
-                float(confidence)
-            )
-        )
-
-        valid = [
-            item
-            for item in self.mn_prediction_history
-            if (
-                item[0] in ("M", "N")
-                and item[1]
-                >= self.mn_confidence_threshold
-            )
-        ]
-
-        if not valid:
-
-            self.mn_stable_prediction = None
-            self.mn_stable_count = 0
-
-            return
-
-        m_votes = sum(
-            1
-            for label, _ in valid
-            if label == "M"
-        )
-
-        n_votes = sum(
-            1
-            for label, _ in valid
-            if label == "N"
-        )
-
-        if m_votes == 0 and n_votes == 0:
-
-            self.mn_stable_prediction = None
-            self.mn_stable_count = 0
-
-            return
-
-        if m_votes >= n_votes:
-
-            winner = "M"
-            winner_votes = m_votes
-
-        else:
-
-            winner = "N"
-            winner_votes = n_votes
-
-        if (
-            winner
-            == self.mn_stable_prediction
-        ):
-
-            self.mn_stable_count += 1
-
-        else:
-
-            self.mn_stable_prediction = winner
-            self.mn_stable_count = 1
-
-        if (
-            winner_votes
-            < self.mn_required_votes
-        ):
-
-            return
+        return {
+            "step": step,
+            "moving": moving,
+            "path": self.dynamic_path_length,
+            "net": self.dynamic_net_displacement,
+        }
 
     # ==========================================================
-    # M/N candidate
+    # RESET TRAJECTORY
     # ==========================================================
 
-    def _get_mn_candidate(
-        self
-    ):
-
-        valid = [
-            item
-            for item in self.mn_prediction_history
-            if (
-                item[0] in ("M", "N")
-                and item[1]
-                >= self.mn_confidence_threshold
-            )
-        ]
-
-        if not valid:
-
-            return None, 0.0, 0
-
-        m_votes = sum(
-            1
-            for label, _ in valid
-            if label == "M"
-        )
-
-        n_votes = sum(
-            1
-            for label, _ in valid
-            if label == "N"
-        )
-
-        if m_votes >= n_votes:
-
-            label = "M"
-            votes = m_votes
-
-        else:
-
-            label = "N"
-            votes = n_votes
-
-        confidences = [
-            confidence
-            for prediction, confidence
-            in valid
-            if prediction == label
-        ]
-
-        confidence = (
-            float(np.mean(confidences))
-            if confidences
-            else 0.0
-        )
-
-        return (
-            label,
-            confidence,
-            votes
-        )
-
-    # ==========================================================
-    # M/N stable
-    # ==========================================================
-
-    def _is_stable_mn(
-        self
-    ):
-
-        (
-            label,
-            confidence,
-            votes
-        ) = self._get_mn_candidate()
-
-        if label is None:
-
-            return False
-
-        return (
-            votes
-            >= self.mn_required_votes
-            and confidence
-            >= self.mn_confidence_threshold
-            and self.mn_stable_count
-            >= self.mn_confirmation_frames
-        )
-
-    # ==========================================================
-    # Reset dynamic candidate
-    # ==========================================================
-
-    def _reset_dynamic_candidate(
+    def _reset_trajectory(
         self
     ):
 
@@ -614,8 +457,14 @@ class RecognitionController:
 
         self.dynamic_motion_history.clear()
 
+        self.dynamic_start_point = None
+        self.dynamic_current_point = None
+
+        self.dynamic_path_length = 0.0
+        self.dynamic_net_displacement = 0.0
+
     # ==========================================================
-    # Reset static tracking
+    # STATIC RESET
     # ==========================================================
 
     def _reset_static_tracking(
@@ -625,13 +474,10 @@ class RecognitionController:
         self.static_candidate = None
         self.static_candidate_count = 0
 
-        self.mn_prediction_history.clear()
-
-        self.mn_stable_prediction = None
-        self.mn_stable_count = 0
+        self.mn_history.clear()
 
     # ==========================================================
-    # Reset gesture state
+    # GESTURE STATE RESET
     # ==========================================================
 
     def _reset_gesture_state(
@@ -642,47 +488,23 @@ class RecognitionController:
 
         self._reset_static_tracking()
 
-        self._reset_dynamic_candidate()
+        self._reset_trajectory()
 
         self.unlock_candidate = None
         self.unlock_candidate_count = 0
 
-        self.locked_motion_history.clear()
-
     # ==========================================================
-    # Initialize new hand
+    # INITIALIZATION RESET
     # ==========================================================
 
-    def _start_initialization(
-        self,
-        raw_features
+    def _reset_initialization(
+        self
     ):
 
-        self._reset_gesture_state()
-
-        self.locked_features = None
-        self.locked_label = None
-
-        self.feature_history.clear()
-
-        smoothed = self._smooth_features(
-            raw_features
-        )
-
-        self.initialization_count = 1
-
-        self.mode = self.INITIALIZING
-
-        self.previous_raw_features = (
-            raw_features.copy()
-        )
-
-        self.previous_features = (
-            smoothed.copy()
-        )
+        self.initialization_count = 0
 
     # ==========================================================
-    # Response
+    # RESPONSE
     # ==========================================================
 
     def _response(
@@ -709,19 +531,281 @@ class RecognitionController:
         }
 
     # ==========================================================
+    # LOCK GESTURE
+    # ==========================================================
+
+    def _lock_gesture(
+        self,
+        label,
+        features
+    ):
+
+        self.locked_label = label
+
+        self.locked_features = (
+            np.asarray(
+                features,
+                dtype=np.float32
+            ).copy()
+        )
+
+        self.unlock_candidate = None
+        self.unlock_candidate_count = 0
+
+        self._reset_trajectory()
+
+    # ==========================================================
+    # UNLOCK GESTURE
+    # ==========================================================
+
+    def _unlock_gesture(
+        self
+    ):
+
+        self.locked_label = None
+        self.locked_features = None
+
+        self.unlock_candidate = None
+        self.unlock_candidate_count = 0
+
+        self._reset_trajectory()
+
+    # ==========================================================
+    # UPDATE DIFFERENT-LABEL CANDIDATE
+    #
+    # A locked gesture is NOT released because of feature
+    # distance anymore.
+    #
+    # The model must consistently identify a different gesture.
+    # ==========================================================
+
+    def _update_unlock_candidate(
+        self,
+        prediction
+    ):
+
+        if (
+            prediction is None
+            or prediction == self.locked_label
+        ):
+
+            self.unlock_candidate = None
+            self.unlock_candidate_count = 0
+
+            return False
+
+        if (
+            prediction
+            == self.unlock_candidate
+        ):
+
+            self.unlock_candidate_count += 1
+
+        else:
+
+            self.unlock_candidate = prediction
+            self.unlock_candidate_count = 1
+
+        return (
+            self.unlock_candidate_count
+            >= self.unlock_change_frames
+        )
+
+    # ==========================================================
+    # M/N HISTORY
+    # ==========================================================
+
+    def _update_mn_history(
+        self,
+        prediction,
+        confidence
+    ):
+
+        if prediction not in (
+            "M",
+            "N"
+        ):
+
+            self.mn_history.clear()
+
+            return
+
+        self.mn_history.append(
+            (
+                prediction,
+                float(confidence)
+            )
+        )
+
+    # ==========================================================
+    # GET STABLE M/N
+    # ==========================================================
+
+    def _get_stable_mn(
+        self
+    ):
+
+        if not self.mn_history:
+
+            return None, 0.0, 0
+
+        valid = [
+            item
+            for item in self.mn_history
+            if item[1]
+            >= self.mn_confidence_threshold
+        ]
+
+        if not valid:
+
+            return None, 0.0, 0
+
+        m_votes = sum(
+            1
+            for label, _
+            in valid
+            if label == "M"
+        )
+
+        n_votes = sum(
+            1
+            for label, _
+            in valid
+            if label == "N"
+        )
+
+        if m_votes >= n_votes:
+
+            winner = "M"
+            votes = m_votes
+
+        else:
+
+            winner = "N"
+            votes = n_votes
+
+        if (
+            votes
+            < self.mn_required_votes
+        ):
+
+            return None, 0.0, votes
+
+        confidences = [
+            confidence
+            for label, confidence
+            in valid
+            if label == winner
+        ]
+
+        average_confidence = (
+            float(
+                np.mean(
+                    confidences
+                )
+            )
+            if confidences
+            else 0.0
+        )
+
+        return (
+            winner,
+            average_confidence,
+            votes
+        )
+
+    # ==========================================================
+    # UPDATE STATIC CANDIDATE
+    # ==========================================================
+
+    def _update_static_candidate(
+        self,
+        prediction
+    ):
+
+        if (
+            prediction is not None
+            and prediction
+            == self.static_candidate
+        ):
+
+            self.static_candidate_count += 1
+
+        else:
+
+            self.static_candidate = prediction
+            self.static_candidate_count = 1
+
+    # ==========================================================
+    # START DYNAMIC CANDIDATE
+    # ==========================================================
+
+    def _start_dynamic_candidate(
+        self,
+        features
+    ):
+
+        self.mode = (
+            self.DYNAMIC_CANDIDATE
+        )
+
+        self.dynamic_candidate_frames = [
+            np.asarray(
+                features,
+                dtype=np.float32
+            ).copy()
+        ]
+
+        # The first point is the origin of this candidate.
+        index_tip = self._get_index_tip(
+            features
+        )
+
+        self.dynamic_start_point = (
+            None
+            if index_tip is None
+            else index_tip.copy()
+        )
+
+        self.dynamic_current_point = (
+            None
+            if index_tip is None
+            else index_tip.copy()
+        )
+
+        self.dynamic_path_length = 0.0
+        self.dynamic_net_displacement = 0.0
+
+        self.dynamic_motion_count = 0
+        self.dynamic_gap_count = 0
+
+        self.dynamic_motion_history.clear()
+
+    # ==========================================================
+    # CANCEL DYNAMIC CANDIDATE
+    # ==========================================================
+
+    def _cancel_dynamic_candidate(
+        self
+    ):
+
+        self._reset_trajectory()
+
+        self.mode = self.STATIC
+
+    # ==========================================================
     # LOCKED STATE
     # ==========================================================
 
     def _handle_locked_state(
         self,
-        raw_features,
-        smoothed_features,
-        raw_motion
+        features,
+        trajectory
     ):
 
         prediction, confidence = (
             self.static_predictor.predict(
-                smoothed_features
+                features
             )
         )
 
@@ -731,20 +815,10 @@ class RecognitionController:
         )
 
         # ------------------------------------------------------
-        # Always expose the current model prediction.
+        # SAME LABEL
         #
-        # This is important for debugging M/N and other gestures.
+        # Movement does not unlock the gesture.
         # ------------------------------------------------------
-
-        # ======================================================
-        # 1. SAME LABEL
-        # ======================================================
-        #
-        # This is the most important fix.
-        #
-        # If the model still sees the same committed gesture,
-        # movement of the hand does NOT unlock it.
-        # ======================================================
 
         if (
             self.locked_label is not None
@@ -754,63 +828,22 @@ class RecognitionController:
             self.unlock_candidate = None
             self.unlock_candidate_count = 0
 
-        # ======================================================
-        # 2. DIFFERENT STATIC LABEL
-        # ======================================================
-
         else:
 
-            if prediction is not None:
-
-                if (
-                    prediction
-                    == self.unlock_candidate
-                ):
-
-                    self.unlock_candidate_count += 1
-
-                else:
-
-                    self.unlock_candidate = (
-                        prediction
-                    )
-
-                    self.unlock_candidate_count = 1
-
-            else:
-
-                self.unlock_candidate = None
-                self.unlock_candidate_count = 0
-
             # --------------------------------------------------
-            # Do NOT unlock from one bad RF frame.
+            # A different static label must persist.
             # --------------------------------------------------
 
-            if (
-                self.unlock_candidate is not None
-                and self.unlock_candidate_count
-                >= self.unlock_label_frames
+            if self._update_unlock_candidate(
+                prediction
             ):
 
-                self.locked_features = None
-                self.locked_label = None
-
-                self.unlock_candidate = None
-                self.unlock_candidate_count = 0
-
-                self.locked_motion_history.clear()
-
-                self._reset_static_tracking()
-                self._reset_dynamic_candidate()
+                self._unlock_gesture()
 
                 self.mode = self.STATIC
 
-                self.previous_raw_features = (
-                    raw_features.copy()
-                )
-
                 self.previous_features = (
-                    smoothed_features.copy()
+                    features.copy()
                 )
 
                 return self._response(
@@ -819,68 +852,27 @@ class RecognitionController:
                     mode=self.STATIC
                 )
 
-        # ======================================================
-        # 3. DYNAMIC ESCAPE
-        # ======================================================
-        #
-        # A committed static gesture should NOT be unlocked by
-        # feature difference.
-        #
-        # A genuine sustained dynamic trajectory is different:
-        # it is allowed to escape the static lock.
-        # ======================================================
-
-        moving = (
-            raw_motion
-            >= self.dynamic_motion_threshold
-        )
-
-        self.locked_motion_history.append(
-            moving
-        )
-
-        recent_movement = sum(
-            1
-            for value
-            in self.locked_motion_history
-            if value
-        )
-
         # ------------------------------------------------------
-        # Only consider dynamic escape when physical movement
-        # is sustained.
+        # Dynamic escape from a locked static gesture.
         #
-        # A few noisy frames cannot do it.
+        # A trajectory must be substantial enough to represent
+        # an intentional dynamic sign.
         # ------------------------------------------------------
 
         if (
-            recent_movement
-            >= self.locked_dynamic_required_frames
+            trajectory["moving"]
+            and trajectory["path"]
+            >= self.dynamic_path_threshold
+            and trajectory["net"]
+            >= self.dynamic_net_displacement_threshold
         ):
 
-            # Start dynamic candidate.
-            self._reset_dynamic_candidate()
-
-            self.dynamic_candidate_frames = [
-                smoothed_features.copy()
-            ]
-
-            self.dynamic_motion_count = 1
-
-            self.dynamic_motion_history.append(
-                True
-            )
-
-            self.mode = (
-                self.DYNAMIC_CANDIDATE
-            )
-
-            self.previous_raw_features = (
-                raw_features.copy()
+            self._start_dynamic_candidate(
+                features
             )
 
             self.previous_features = (
-                smoothed_features.copy()
+                features.copy()
             )
 
             return self._response(
@@ -889,16 +881,8 @@ class RecognitionController:
                 mode=self.DYNAMIC_CANDIDATE
             )
 
-        # ======================================================
-        # Remain locked.
-        # ======================================================
-
-        self.previous_raw_features = (
-            raw_features.copy()
-        )
-
         self.previous_features = (
-            smoothed_features.copy()
+            features.copy()
         )
 
         return self._response(
@@ -922,15 +906,12 @@ class RecognitionController:
 
         if features is None:
 
-            self.previous_raw_features = None
             self.previous_features = None
 
             self.locked_features = None
             self.locked_label = None
 
             self.feature_history.clear()
-
-            self.locked_motion_history.clear()
 
             self._reset_initialization()
             self._reset_gesture_state()
@@ -941,51 +922,54 @@ class RecognitionController:
                 mode=self.NONE
             )
 
-        raw_features = np.asarray(
+        current_features = np.asarray(
             features,
             dtype=np.float32
         )
 
         # ======================================================
-        # SMOOTHED STATIC FEATURES
-        # ======================================================
-
-        smoothed_features = (
-            self._smooth_features(
-                raw_features
-            )
-        )
-
-        # ======================================================
-        # RAW MOVEMENT
-        # ======================================================
-
-        raw_motion = (
-            self._calculate_raw_motion(
-                raw_features
-            )
-        )
-
-        self.raw_motion_history.append(
-            raw_motion
-        )
-
-        # ======================================================
-        # NEW HAND
+        # HAND ENTERED
         # ======================================================
 
         if (
             self.mode == self.NONE
-            and self.previous_raw_features is None
+            and self.previous_features is None
         ):
 
-            self._start_initialization(
-                raw_features
+            self.feature_history.clear()
+
+            self._reset_gesture_state()
+
+            self.locked_features = None
+            self.locked_label = None
+
+            self.feature_history.append(
+                current_features.copy()
+            )
+
+            self.initialization_count = 1
+
+            self.mode = (
+                self.INITIALIZING
+            )
+
+            self.previous_features = (
+                current_features.copy()
             )
 
             return self._response(
                 mode=self.INITIALIZING
             )
+
+        # ======================================================
+        # SMOOTH
+        # ======================================================
+
+        smoothed_features = (
+            self._smooth_features(
+                current_features
+            )
+        )
 
         # ======================================================
         # INITIALIZATION
@@ -997,10 +981,6 @@ class RecognitionController:
         ):
 
             self.initialization_count += 1
-
-            self.previous_raw_features = (
-                raw_features.copy()
-            )
 
             self.previous_features = (
                 smoothed_features.copy()
@@ -1018,7 +998,7 @@ class RecognitionController:
             self.initialization_count = 0
 
             self._reset_static_tracking()
-            self._reset_dynamic_candidate()
+            self._reset_trajectory()
 
             self.mode = self.STATIC
 
@@ -1027,7 +1007,20 @@ class RecognitionController:
             )
 
         # ======================================================
-        # LOCKED GESTURE
+        # TRAJECTORY UPDATE
+        #
+        # This is intentionally based on the normalized index
+        # fingertip rather than all 70 features.
+        # ======================================================
+
+        trajectory = (
+            self._update_trajectory(
+                smoothed_features
+            )
+        )
+
+        # ======================================================
+        # LOCKED STATIC GESTURE
         # ======================================================
 
         if (
@@ -1036,10 +1029,20 @@ class RecognitionController:
         ):
 
             return self._handle_locked_state(
-                raw_features,
                 smoothed_features,
-                raw_motion
+                trajectory
             )
+
+        # ======================================================
+        # NONE WITHOUT LOCK
+        # ======================================================
+
+        if (
+            self.mode == self.NONE
+            and self.locked_label is None
+        ):
+
+            self.mode = self.STATIC
 
         # ======================================================
         # STATIC
@@ -1059,14 +1062,6 @@ class RecognitionController:
             )
 
             # --------------------------------------------------
-            # Normal static stability
-            # --------------------------------------------------
-
-            self._update_static_candidate(
-                prediction
-            )
-
-            # --------------------------------------------------
             # M/N temporal stabilization
             # --------------------------------------------------
 
@@ -1079,98 +1074,59 @@ class RecognitionController:
                 mn_prediction,
                 mn_confidence,
                 mn_votes
-            ) = self._get_mn_candidate()
-
-            mn_stable = (
-                self._is_stable_mn()
-            )
-
-            display_prediction = prediction
-            display_confidence = float(
-                confidence
-            )
-
-            if mn_stable:
-
-                display_prediction = (
-                    mn_prediction
-                )
-
-                display_confidence = max(
-                    float(confidence),
-                    float(mn_confidence)
-                )
-
-                self.last_prediction = (
-                    display_prediction
-                )
-
-                self.last_confidence = (
-                    display_confidence
-                )
+            ) = self._get_stable_mn()
 
             # --------------------------------------------------
-            # Dynamic candidate
+            # NORMAL static stability
+            # --------------------------------------------------
+
+            self._update_static_candidate(
+                prediction
+            )
+
+            # --------------------------------------------------
+            # DYNAMIC GATE
             #
-            # Static mode requires real raw landmark movement.
+            # IMPORTANT:
+            #
+            # Do NOT enter dynamic mode just because one frame
+            # moved.
+            #
+            # First establish a meaningful index-finger path.
             # --------------------------------------------------
 
-            self.dynamic_motion_history.append(
-                raw_motion
-                >= self.dynamic_motion_threshold
-            )
-
-            recent_movement = sum(
-                1
-                for value
-                in self.dynamic_motion_history
-                if value
-            )
-
-            strong_static = (
-                confidence
-                >= self.dynamic_static_guard_threshold
+            trajectory_ready = (
+                trajectory["path"]
+                >= self.dynamic_path_threshold
+                and trajectory["net"]
+                >= self.dynamic_net_displacement_threshold
+                and self.dynamic_motion_count
+                >= self.dynamic_start_frames
             )
 
             # --------------------------------------------------
-            # Strong static prediction + weak movement:
-            # stay static.
+            # Strong M/N/static prediction protection.
+            #
+            # A confident static prediction with only ordinary
+            # movement remains static.
+            #
+            # We do NOT permanently block dynamic recognition.
+            # A sufficiently strong trajectory can still pass.
             # --------------------------------------------------
 
             if (
-                strong_static
-                and recent_movement
-                < self.dynamic_required_motion_frames
+                prediction in ("M", "N")
+                and confidence
+                >= self.mn_confidence_threshold
+                and not trajectory_ready
             ):
 
-                self._reset_dynamic_candidate()
+                self._reset_trajectory()
 
-            # --------------------------------------------------
-            # Genuine sustained movement:
-            # begin dynamic candidate.
-            # --------------------------------------------------
+            elif trajectory_ready:
 
-            elif (
-                recent_movement
-                >= self.dynamic_required_motion_frames
-            ):
-
-                self.mode = (
-                    self.DYNAMIC_CANDIDATE
-                )
-
-                self.dynamic_motion_count = (
-                    recent_movement
-                )
-
-                self.dynamic_gap_count = 0
-
-                self.dynamic_candidate_frames = [
-                    smoothed_features.copy()
-                ]
-
-                self.previous_raw_features = (
-                    raw_features.copy()
+                self._start_dynamic_candidate(
+                    smoothed_features
                 )
 
                 self.previous_features = (
@@ -1178,77 +1134,77 @@ class RecognitionController:
                 )
 
                 return self._response(
-                    prediction=display_prediction,
-                    confidence=display_confidence,
+                    prediction=prediction,
+                    confidence=confidence,
                     mode=self.DYNAMIC_CANDIDATE
                 )
 
             # --------------------------------------------------
-            # Static commit
+            # M/N confirmed
             # --------------------------------------------------
 
-            mn_confirmed = (
-                mn_stable
+            if (
+                mn_prediction is not None
                 and mn_votes
                 >= self.mn_required_votes
-                and mn_confidence
-                >= self.mn_confidence_threshold
-            )
-
-            normal_static_confirmed = (
-                self.static_candidate_count
-                >= self.static_prediction_frames
-                and confidence
-                >= self.static_confidence_threshold
-            )
-
-            if (
-                mn_confirmed
-                or normal_static_confirmed
             ):
 
-                self.locked_features = (
-                    smoothed_features.copy()
+                self._lock_gesture(
+                    mn_prediction,
+                    smoothed_features
                 )
 
-                self.locked_label = (
-                    display_prediction
-                )
-
-                self.unlock_candidate = None
-                self.unlock_candidate_count = 0
-
-                self.locked_motion_history.clear()
-
-                self._reset_dynamic_candidate()
+                self._reset_static_tracking()
 
                 self.mode = self.NONE
-
-                self.previous_raw_features = (
-                    raw_features.copy()
-                )
 
                 self.previous_features = (
                     smoothed_features.copy()
                 )
 
                 return self._response(
-                    prediction=display_prediction,
-                    confidence=display_confidence,
+                    prediction=mn_prediction,
+                    confidence=mn_confidence,
                     mode=self.NONE
                 )
 
-            self.previous_raw_features = (
-                raw_features.copy()
-            )
+            # --------------------------------------------------
+            # Normal static confirmed
+            # --------------------------------------------------
+
+            if (
+                self.static_candidate_count
+                >= self.static_prediction_frames
+                and confidence
+                >= self.static_confidence_threshold
+            ):
+
+                self._lock_gesture(
+                    prediction,
+                    smoothed_features
+                )
+
+                self._reset_static_tracking()
+
+                self.mode = self.NONE
+
+                self.previous_features = (
+                    smoothed_features.copy()
+                )
+
+                return self._response(
+                    prediction=prediction,
+                    confidence=confidence,
+                    mode=self.NONE
+                )
 
             self.previous_features = (
                 smoothed_features.copy()
             )
 
             return self._response(
-                prediction=display_prediction,
-                confidence=display_confidence,
+                prediction=prediction,
+                confidence=confidence,
                 mode=self.STATIC
             )
 
@@ -1265,176 +1221,159 @@ class RecognitionController:
                 smoothed_features.copy()
             )
 
-            prediction, confidence = (
+            # --------------------------------------------------
+            # Static predictor remains active during candidate.
+            #
+            # This lets a static M/N pose cancel the candidate
+            # instead of blindly proceeding toward J/Z.
+            # --------------------------------------------------
+
+            static_prediction, static_confidence = (
                 self.static_predictor.predict(
                     smoothed_features
                 )
             )
 
-            self.last_prediction = prediction
-            self.last_confidence = float(
-                confidence
+            self.last_prediction = (
+                static_prediction
             )
 
-            self._update_mn_history(
-                prediction,
-                confidence
-            )
-
-            (
-                mn_prediction,
-                mn_confidence,
-                mn_votes
-            ) = self._get_mn_candidate()
-
-            mn_stable = (
-                self._is_stable_mn()
-            )
-
-            display_prediction = prediction
-            display_confidence = float(
-                confidence
-            )
-
-            if mn_stable:
-
-                display_prediction = (
-                    mn_prediction
-                )
-
-                display_confidence = max(
-                    float(confidence),
-                    float(mn_confidence)
-                )
-
-            moving = (
-                raw_motion
-                >= self.dynamic_motion_threshold
-            )
-
-            self.dynamic_motion_history.append(
-                moving
-            )
-
-            if moving:
-
-                self.dynamic_motion_count += 1
-                self.dynamic_gap_count = 0
-
-            else:
-
-                self.dynamic_gap_count += 1
-
-                if (
-                    self.dynamic_gap_count
-                    > self.dynamic_gap_frames
-                ):
-
-                    self._reset_dynamic_candidate()
-
-                    self._reset_static_tracking()
-
-                    self.mode = self.STATIC
-
-                    self.previous_raw_features = (
-                        raw_features.copy()
-                    )
-
-                    self.previous_features = (
-                        smoothed_features.copy()
-                    )
-
-                    return self._response(
-                        prediction=display_prediction,
-                        confidence=display_confidence,
-                        mode=self.STATIC
-                    )
-
-            recent_movement = sum(
-                1
-                for value
-                in self.dynamic_motion_history
-                if value
+            self.last_confidence = (
+                float(static_confidence)
             )
 
             # --------------------------------------------------
-            # A strong static pose can cancel an immature
-            # dynamic transition.
+            # Update trajectory using the current frame.
+            # --------------------------------------------------
+
+            trajectory = (
+                self._update_trajectory(
+                    smoothed_features
+                )
+            )
+
+            # --------------------------------------------------
+            # If movement has stopped before enough trajectory
+            # evidence exists, cancel dynamic detection.
             # --------------------------------------------------
 
             if (
-                confidence
-                >= self.dynamic_static_guard_threshold
-                and recent_movement
-                < self.dynamic_required_motion_frames
+                not trajectory["moving"]
             ):
 
-                self._reset_dynamic_candidate()
+                self.dynamic_gap_count += 1
 
-                self.mode = self.STATIC
+            else:
 
-                self.previous_raw_features = (
-                    raw_features.copy()
+                self.dynamic_gap_count = 0
+
+            # --------------------------------------------------
+            # Strong static prediction + insufficient trajectory
+            # means this was almost certainly pose jitter.
+            # --------------------------------------------------
+
+            if (
+                static_prediction in ("M", "N")
+                and static_confidence
+                >= self.mn_confidence_threshold
+                and (
+                    trajectory["path"]
+                    < self.dynamic_path_threshold
+                    or trajectory["net"]
+                    < self.dynamic_net_displacement_threshold
                 )
+            ):
+
+                self._cancel_dynamic_candidate()
 
                 self.previous_features = (
                     smoothed_features.copy()
                 )
 
                 return self._response(
-                    prediction=display_prediction,
-                    confidence=display_confidence,
+                    prediction=static_prediction,
+                    confidence=static_confidence,
                     mode=self.STATIC
                 )
 
             # --------------------------------------------------
-            # Confirm dynamic.
+            # Movement stopped for too long.
             # --------------------------------------------------
 
             if (
-                self.dynamic_motion_count
-                >= self.dynamic_start_frames
-                and recent_movement
-                >= self.dynamic_required_motion_frames
+                self.dynamic_gap_count
+                > self.dynamic_gap_frames
             ):
+
+                self._cancel_dynamic_candidate()
+
+                self._reset_static_tracking()
+
+                self.previous_features = (
+                    smoothed_features.copy()
+                )
+
+                return self._response(
+                    prediction=static_prediction,
+                    confidence=static_confidence,
+                    mode=self.STATIC
+                )
+
+            # --------------------------------------------------
+            # Confirm genuine trajectory.
+            # --------------------------------------------------
+
+            trajectory_ready = (
+                trajectory["path"]
+                >= self.dynamic_path_threshold
+                and trajectory["net"]
+                >= self.dynamic_net_displacement_threshold
+                and self.dynamic_motion_count
+                >= self.dynamic_start_frames
+            )
+
+            if trajectory_ready:
+
+                # --------------------------------------------------
+                # Feed the accumulated candidate frames to the
+                # existing sequence detector.
+                # --------------------------------------------------
 
                 self.sequence_detector.start_recording(
                     self.dynamic_candidate_frames
                 )
 
-                self._reset_dynamic_candidate()
+                self._reset_trajectory()
+
                 self._reset_static_tracking()
 
-                # The old committed static identity must no longer
-                # suppress this dynamic gesture.
+                # Dynamic recognition is now independent of any
+                # previous static lock.
                 self.locked_features = None
                 self.locked_label = None
 
-                self.mode = self.DYNAMIC
+                self.unlock_candidate = None
+                self.unlock_candidate_count = 0
 
-                self.previous_raw_features = (
-                    raw_features.copy()
-                )
+                self.mode = self.DYNAMIC
 
                 self.previous_features = (
                     smoothed_features.copy()
                 )
 
                 return self._response(
+                    prediction=static_prediction,
+                    confidence=static_confidence,
                     mode=self.DYNAMIC
                 )
-
-            self.previous_raw_features = (
-                raw_features.copy()
-            )
 
             self.previous_features = (
                 smoothed_features.copy()
             )
 
             return self._response(
-                prediction=display_prediction,
-                confidence=display_confidence,
+                prediction=static_prediction,
+                confidence=static_confidence,
                 mode=self.DYNAMIC_CANDIDATE
             )
 
@@ -1450,10 +1389,6 @@ class RecognitionController:
                 )
             )
 
-            self.previous_raw_features = (
-                raw_features.copy()
-            )
-
             self.previous_features = (
                 smoothed_features.copy()
             )
@@ -1463,6 +1398,10 @@ class RecognitionController:
                 return self._response(
                     mode=self.DYNAMIC
                 )
+
+            # --------------------------------------------------
+            # LSTM prediction
+            # --------------------------------------------------
 
             prediction, confidence = (
                 self.dynamic_predictor.predict(
@@ -1475,24 +1414,28 @@ class RecognitionController:
                 confidence
             )
 
+            # --------------------------------------------------
+            # Valid J/Z
+            # --------------------------------------------------
+
             if (
                 prediction is not None
                 and confidence
                 >= self.dynamic_confidence_threshold
             ):
 
-                self.locked_features = (
-                    smoothed_features.copy()
+                self._lock_gesture(
+                    prediction,
+                    smoothed_features
                 )
-
-                self.locked_label = prediction
-
-                self.unlock_candidate = None
-                self.unlock_candidate_count = 0
 
                 self._reset_gesture_state()
 
                 self.mode = self.NONE
+
+                self.previous_features = (
+                    smoothed_features.copy()
+                )
 
                 return self._response(
                     prediction=prediction,
@@ -1502,8 +1445,8 @@ class RecognitionController:
                 )
 
             # --------------------------------------------------
-            # Failed dynamic prediction.
-            # Return to static without locking an invalid result.
+            # Invalid dynamic sequence.
+            # Return safely to static.
             # --------------------------------------------------
 
             self._reset_gesture_state()
@@ -1512,6 +1455,10 @@ class RecognitionController:
             self.locked_label = None
 
             self.mode = self.STATIC
+
+            self.previous_features = (
+                smoothed_features.copy()
+            )
 
             return self._response(
                 mode=self.STATIC
@@ -1528,10 +1475,6 @@ class RecognitionController:
 
         self.mode = self.STATIC
 
-        self.previous_raw_features = (
-            raw_features.copy()
-        )
-
         self.previous_features = (
             smoothed_features.copy()
         )
@@ -1539,16 +1482,6 @@ class RecognitionController:
         return self._response(
             mode=self.STATIC
         )
-
-    # ==========================================================
-    # INITIALIZATION RESET
-    # ==========================================================
-
-    def _reset_initialization(
-        self
-    ):
-
-        self.initialization_count = 0
 
     # ==========================================================
     # GETTERS
@@ -1581,7 +1514,6 @@ class RecognitionController:
 
         self.mode = self.NONE
 
-        self.previous_raw_features = None
         self.previous_features = None
 
         self.locked_features = None
@@ -1594,11 +1526,8 @@ class RecognitionController:
 
         self.feature_history.clear()
 
-        self.raw_motion_history.clear()
-        self.locked_motion_history.clear()
-
         self._reset_static_tracking()
-        self._reset_dynamic_candidate()
+        self._reset_trajectory()
 
         self.last_prediction = None
         self.last_confidence = 0.0
