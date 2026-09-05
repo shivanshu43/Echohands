@@ -62,6 +62,7 @@ LABEL_ENCODER_PATH = (
 # ==========================================================
 
 SIGN_LETTERS_IMAGE_PATH = (
-    Path("sign description")
+    Path("Assets")
+    / "sign_guide"
     / "sign letters.png"
 )

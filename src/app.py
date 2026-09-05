@@ -28,7 +28,7 @@ MANIFEST_PATH = (
 )
 
 SIGN_GUIDE_DIR = (
-    PROJECT_ROOT / "sign description"
+    PROJECT_ROOT / "Assets" / "sign_guide"
 )
 
 SIGN_GUIDE_IMAGE = (
@@ -558,7 +558,7 @@ def create_sign_guide():
 
     description_lines = [
         "Avoid common mistakes",
-        "for better confidence percentage",
+        "for better confidence",
     ]
 
     video_lines = [
@@ -711,6 +711,7 @@ def create_sign_description():
 import sys
 import tkinter as tk
 from tkinter import ttk
+from tkinter import font as tkfont
 from pathlib import Path
 
 file_path = Path(sys.argv[1])
@@ -759,6 +760,17 @@ content.pack(fill='both', expand=True, padx=14, pady=14)
 scrollbar = ttk.Scrollbar(content, orient='vertical')
 scrollbar.pack(side='right', fill='y')
 
+# Use a fixed-width font so ASCII boxes and separators stay perfectly aligned.
+# Consolas is preferred on Windows; fall back to another fixed-width font when
+# Consolas is unavailable.
+available_fonts = set(tkfont.families(root))
+if 'Consolas' in available_fonts:
+    description_font = ('Consolas', 9)
+elif 'Courier New' in available_fonts:
+    description_font = ('Courier New', 9)
+else:
+    description_font = 'TkFixedFont'
+
 text_widget = tk.Text(
     content,
     wrap='word',
@@ -771,7 +783,7 @@ text_widget = tk.Text(
     relief='flat',
     borderwidth=0,
     highlightthickness=0,
-    font=('Segoe UI', 10),
+    font=description_font,
     padx=8,
     pady=6,
 )
