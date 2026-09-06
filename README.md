@@ -9,6 +9,8 @@ The Application currently focuses on American Sign Language (ASL) and serves as 
 
 <div align="center">
 
+> **First time cloning EchoHands?** You can skip this section for now
+
 📦 **[Get the Latest Model Configuration File →](#-model-configuration-file)**  
  Keep your Model Configuration File up to date for the latest released models 
  (Download the file and paste it into the application root directory. If prompted, select "Replace" to overwrite the existing file)
@@ -34,10 +36,13 @@ The Application currently focuses on American Sign Language (ASL) and serves as 
 ### Recommended Python Version
 
 Application is recommended to run with:
-
 `Python 3.10`
 
 Using Python 3.10 helps maintain compatibility with the dependencies used by the Application
+
+<mark>I know most of you probably don't have this specific Python version installed 😅,</mark> <br>
+ <mark>no need to worry! We'll create a virtual environment specifically with Python 3.10 further in the setup process, so you can continue with the installation without any issues</mark>
+
 
 ---
 
@@ -50,8 +55,6 @@ Open **Command Prompt** or **PowerShell** and run:
 git clone https://github.com/shivanshu43/Echohands.git
 cd Echohands
 ```
-
-> **Note:** The repository directory created by Git is `EchoHands`. Use the directory name created on your system if it differs.
 
 **Expected result:**
 
@@ -84,10 +87,10 @@ The command normally produces no output and creates a new `venv` folder inside t
 
 The project should now contain:
 
-<mark>
+```
 EchoHands/
-└── venv/
-</mark>
+    └── venv/
+```
 
 ---
 
@@ -124,11 +127,13 @@ Output should look something like ;
 <p align="center">
   <img src="Assets\Readme img\where python.png" alt="EchoHands Banner" width="80%">
 </p>
-The first path should point to the project's virtual environment, similar to:
 
+The first path should point to the project's virtual environment, similar to: <br>
 <mark>
 E:\EchoHands\venv\Scripts\python.exe
 </mark>
+
+<br>
 
 Then verify the Python version:
 
@@ -136,8 +141,7 @@ Then verify the Python version:
 python --version
 ```
 
-**Expected result:**
-
+**Expected result:** <br>
 <mark>
 Python 3.10.x
 </mark>
@@ -145,7 +149,9 @@ Python 3.10.x
 ---
 
 
->### If you face an error related to the virtual environment, use the following recovery procedure.
+>### [Only If you face an error related to the virtual environment], 
+>
+> use the following recovery procedure, **Otherwise SKIP this part...**
 >
 >#### Step 1 — Deactivate the Current Environment
 >
@@ -163,9 +169,8 @@ Python 3.10.x
 >
 >to:
 >
-><mark>
->E:\EchoHands>
-</mark>
+>
+><mark>E:\EchoHands></mark>
 >
 >---
 >#### Step 2 — Delete the Incorrect `venv`
@@ -189,11 +194,10 @@ Python 3.10.x
 >
 >You should see something similar to:
 >
-><mark>
->Installed Pythons found by py Launcher for Windows
-> -3.13-64 ...
-> -3.10-64 C:\...\Python310\python.exe
-></mark>
+><mark>Installed Pythons found by py Launcher for Windows </mark><br>
+><mark> -3.13-64 ...                                      </mark><br>
+><mark> -3.10-64 C:\...\Python310\python.exe              </mark><br>
+><mark>                                                   </mark>
 >
 >**We specifically need to see a 3.10 entry.**
 >
@@ -205,9 +209,7 @@ Python 3.10.x
 >
 >The expected result is:
 >
-><mark>
->Python 3.10.x
-></mark>
+><mark>Python 3.10.x</mark>
 >
 >
 >### ► If `py -3.10 --version` Succeeds
@@ -243,24 +245,23 @@ Python 3.10.x
 >where python
 >```
 >
->The first result should be:
->
+>The first result should be: <br>
 ><mark>
 >E:\EchoHands_Alpha-build\venv\Scripts\python.exe
 ></mark>
 >
->So the final verification should look approximately like:
 >
-><mark>
->(venv) E:\EchoHands_Alpha-build>python --version
->Python 3.10.x
 >
->(venv) E:\EchoHands_Alpha-build>where python
->E:\EchoHands_Alpha-build\venv\Scripts\python.exe
->...
-></mark>
+>So the final verification should look approximately like:<br>
+><mark>(venv) E:\EchoHands>python --version               </mark><br>
+><mark>Python 3.10.x                                      </mark><br>
+><mark>                                                   </mark><br>
+><mark>(venv) E:\EchoHands>where python                   </mark><br>
+><mark>E:\EchoHands\venv\Scripts\python.exe               </mark><br>
+><mark>...                                                </mark><br>
+><mark>                                                   </mark>
 >
->---
+><hr>
 >
 >### ► If `py -3.10 --version` Fails
 >
@@ -295,9 +296,9 @@ python -m pip install --upgrade pip
 
 pip is upgraded successfully. The final output should contain a message similar to:
 
-```text
+<mark>
 Successfully installed pip-...
-```
+</mark>
 
 ---
 
@@ -316,15 +317,13 @@ pip downloads and installs the required packages.
 
 The installation should finish with output similar to:
 
-```
+<mark>
 Successfully installed ...
-```
+</mark>
 
 The exact dependencies and versions are defined in:
 
-```
-requirements.txt
-```
+`requirements.txt`
 
 ---
 
@@ -507,20 +506,20 @@ The goal is not to assume that an ASL-trained model can directly recognize ISL. 
 
 Conceptually:
 
-```
-
-EchoHands Recognition Pipeline
-
-            │
-            ├── ASL Dataset + Models
-            │        ↓
-            │     ASL Recognition
-            │
-            └── ISL Dataset + Models
-                     ↓
-                  ISL Recognition
-
-```
+ ```                                           
+                                            
+EchoHands Recognition Pipeline              
+                                            
+            │                               
+            ├── ASL Dataset + Models        
+            │        ↓                      
+            │     ASL Recognition           
+            │                               
+            └── ISL Dataset + Models        
+                     ↓                      
+                  ISL Recognition           
+                                            
+```                                            
 
 This makes EchoHands suitable for future expansion into a broader, modular sign-language recognition platform.
 
@@ -532,19 +531,19 @@ The longer-term idea is to support a cloud or remote architecture where model in
 
 Instead of requiring every mobile device to run the complete recognition stack locally:
 
-```
-Mobile Phone
-      ↓
+ ```                         
+Mobile Phone              
+      ↓                   
 Camera / Recognition Input
-      ↓
-Remote or Cloud Service
-      ↓
-EchoHands Models
-      ↓
-Prediction
-      ↓
-Result Returned to Phone
-```
+      ↓                   
+Remote or Cloud Service   
+      ↓                   
+EchoHands Models          
+      ↓                   
+Prediction                
+      ↓                   
+Result Returned to Phone  
+ ```                         
 
 This could make the mobile application lighter and make model updates easier to manage centrally.
 
