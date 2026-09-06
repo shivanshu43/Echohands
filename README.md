@@ -9,6 +9,8 @@ The Application currently focuses on American Sign Language (ASL) and serves as 
 
 <div align="center">
 
+> **First time cloning EchoHands?** You can skip this section for now
+
 📦 **[Get the Latest Model Configuration File →](#-model-configuration-file)**  
  Keep your Model Configuration File up to date for the latest released models 
  (Download the file and paste it into the application root directory. If prompted, select "Replace" to overwrite the existing file)
@@ -34,10 +36,13 @@ The Application currently focuses on American Sign Language (ASL) and serves as 
 ### Recommended Python Version
 
 Application is recommended to run with:
-
 `Python 3.10`
 
 Using Python 3.10 helps maintain compatibility with the dependencies used by the Application
+
+<mark>I know most of you probably don't have this specific Python version installed 😅,</mark> <br>
+ <mark>no need to worry! We'll create a virtual environment specifically with Python 3.10 further in the setup process, so you can continue with the installation without any issues</mark>
+
 
 ---
 
@@ -51,11 +56,9 @@ git clone https://github.com/shivanshu43/Echohands.git
 cd Echohands
 ```
 
-> **Note:** The repository directory created by Git is `EchoHands`. Use the directory name created on your system if it differs.
-
 **Expected result:**
 
-The repository is downloaded and the terminal moves into the Alpha Build project directory.
+The repository is downloaded and the terminal moves into the project directory.
 
 Your prompt should look similar to:
 
@@ -84,10 +87,10 @@ The command normally produces no output and creates a new `venv` folder inside t
 
 The project should now contain:
 
-<mark>
+```
 EchoHands/
-└── venv/
-</mark>
+    └── venv/
+```
 
 ---
 
@@ -122,13 +125,15 @@ where python
 ```
 Output should look something like ;
 <p align="center">
-  <img src="Assets\Readme img\where python.png" alt="EchoHands Banner" width="80%">
+  <img src="Assets\Readme img\where python.png" alt="EchoHands Banner" width="65%">
 </p>
-The first path should point to the project's virtual environment, similar to:
 
+The first path should point to the project's virtual environment, similar to: <br>
 <mark>
 E:\EchoHands\venv\Scripts\python.exe
 </mark>
+
+<br>
 
 Then verify the Python version:
 
@@ -136,8 +141,7 @@ Then verify the Python version:
 python --version
 ```
 
-**Expected result:**
-
+**Expected result:** <br>
 <mark>
 Python 3.10.x
 </mark>
@@ -145,7 +149,9 @@ Python 3.10.x
 ---
 
 
->### If you face an error related to the virtual environment, use the following recovery procedure.
+>### [Only If you face an error related to the virtual environment], 
+>
+> use the following recovery procedure, **Otherwise SKIP this part...**
 >
 >#### Step 1 — Deactivate the Current Environment
 >
@@ -163,9 +169,8 @@ Python 3.10.x
 >
 >to:
 >
-><mark>
->E:\EchoHands>
-</mark>
+>
+><mark>E:\EchoHands></mark>
 >
 >---
 >#### Step 2 — Delete the Incorrect `venv`
@@ -189,11 +194,10 @@ Python 3.10.x
 >
 >You should see something similar to:
 >
-><mark>
->Installed Pythons found by py Launcher for Windows
-> -3.13-64 ...
-> -3.10-64 C:\...\Python310\python.exe
-></mark>
+><mark>Installed Pythons found by py Launcher for Windows </mark><br>
+><mark> -3.13-64 ...                                      </mark><br>
+><mark> -3.10-64 C:\...\Python310\python.exe              </mark><br>
+><mark>                                                   </mark>
 >
 >**We specifically need to see a 3.10 entry.**
 >
@@ -205,9 +209,7 @@ Python 3.10.x
 >
 >The expected result is:
 >
-><mark>
->Python 3.10.x
-></mark>
+><mark>Python 3.10.x</mark>
 >
 >
 >### ► If `py -3.10 --version` Succeeds
@@ -243,24 +245,23 @@ Python 3.10.x
 >where python
 >```
 >
->The first result should be:
->
+>The first result should be: <br>
 ><mark>
->E:\EchoHands_Alpha-build\venv\Scripts\python.exe
+>E:\EchoHands\venv\Scripts\python.exe
 ></mark>
 >
->So the final verification should look approximately like:
 >
-><mark>
->(venv) E:\EchoHands_Alpha-build>python --version
->Python 3.10.x
 >
->(venv) E:\EchoHands_Alpha-build>where python
->E:\EchoHands_Alpha-build\venv\Scripts\python.exe
->...
-></mark>
+>So the final verification should look approximately like:<br>
+><mark>(venv) E:\EchoHands>python --version               </mark><br>
+><mark>Python 3.10.x                                      </mark><br>
+><mark>                                                   </mark><br>
+><mark>(venv) E:\EchoHands>where python                   </mark><br>
+><mark>E:\EchoHands\venv\Scripts\python.exe               </mark><br>
+><mark>...                                                </mark><br>
+><mark>                                                   </mark>
 >
->---
+><hr>
 >
 >### ► If `py -3.10 --version` Fails
 >
@@ -295,9 +296,9 @@ python -m pip install --upgrade pip
 
 pip is upgraded successfully. The final output should contain a message similar to:
 
-```text
+<mark>
 Successfully installed pip-...
-```
+</mark>
 
 ---
 
@@ -316,22 +317,20 @@ pip downloads and installs the required packages.
 
 The installation should finish with output similar to:
 
-```
+<mark>
 Successfully installed ...
-```
+</mark>
+<br>
 
 The exact dependencies and versions are defined in:
 
-```
-requirements.txt
-```
+`requirements.txt`
 
 ---
 
 
 ## 7. Verify the Model Configuration File
-Unlike the Alpha Build, the Beta Build does not require the AI model files to be stored directly inside the project directory.
-Instead, Beta uses a Model Configuration File to determine which tested model version should be used by the application.
+
 Before launching EchoHands, make sure the following file is present in the project directory:
 
 ```
@@ -357,7 +356,7 @@ The Model Configuration File contains the information required by EchoHands to l
 Once the virtual environment is activated and the dependencies are installed, run:
 
 ```bash
-python src/app.py
+python -m src.app
 ```
 
 **Expected result:**
@@ -365,6 +364,10 @@ EchoHands starts and displays the startup screen.
 On startup, EchoHands checks the Model Configuration File and prepares the required AI models.
 * If the required models are already available in the local cache and are still valid, EchoHands can reuse them.
 * If the models are not available locally or a newer model version is required, EchoHands retrieves the appropriate model package and stores it in the local model cache before starting recognition.
+
+<p align="center">
+  <img src="Assets/Startup UI.png" alt="Startup UI" width="80%">
+</p>
 
 >**Note:** The first launch may take longer because EchoHands may need to prepare the required model files. Later launches can reuse the locally cached models when they are still valid.
 
@@ -381,18 +384,19 @@ For information about supported signs, keyboard controls, recognition behavior, 
 
 ## 📖 User Manual
 
+
 <div align="center" style="border: 1px solid #d0d7de; border-radius: 8px; padding: 20px;">
 
-<a href="EchoHands_User_Manual.pdf">
+<a href="user_Manual.pdf">
   <img src="Assets/user_manual.png" width="80">
 </a>
 
-### [Open EchoHands User Manual](user_Manual.pdf)
+ [Open EchoHands User Manual](user_Manual.pdf)
 
 Click the icon or the link above to open the complete User Manual.
 
 </div>
----
+
 
 ---
 
@@ -456,7 +460,7 @@ Small changes in hand position or finger configuration can significantly affect 
 
 **Faced an issue, or did something not quite work as expected?**
 
-I’m really sorry about that — thodi bohot mistakes toh reh hi jaati hain,,
+really sorry about that — thodi bohot mistakes toh reh hi jaati hain,,
 I’ll surely work on fixing them!
 If you find one, please help me catch those bugs playing hide-and-seek
 
@@ -480,7 +484,7 @@ Whenever a new model version is released, make sure the latest Model Configurati
 
 ### ⬇️ Download Latest Model Configuration File
 
-<a href="https://github.com/shivanshu43/Echohands/raw/refs/heads/main/model_manifest.json" download="model_manifest.json">
+<a href="https://github.com/user-attachments/files/31888740/model_manifest.json">
   <img src="Assets/model_config_icon.png" width="100">
 </a>
 
@@ -507,20 +511,20 @@ The goal is not to assume that an ASL-trained model can directly recognize ISL. 
 
 Conceptually:
 
-```
-
-EchoHands Recognition Pipeline
-
-            │
-            ├── ASL Dataset + Models
-            │        ↓
-            │     ASL Recognition
-            │
-            └── ISL Dataset + Models
-                     ↓
-                  ISL Recognition
-
-```
+ ```                                           
+                                            
+EchoHands Recognition Pipeline              
+                                            
+            │                               
+            ├── ASL Dataset + Models        
+            │        ↓                      
+            │     ASL Recognition           
+            │                               
+            └── ISL Dataset + Models        
+                     ↓                      
+                  ISL Recognition           
+                                            
+```                                            
 
 This makes EchoHands suitable for future expansion into a broader, modular sign-language recognition platform.
 
@@ -532,19 +536,19 @@ The longer-term idea is to support a cloud or remote architecture where model in
 
 Instead of requiring every mobile device to run the complete recognition stack locally:
 
-```
-Mobile Phone
-      ↓
+ ```                         
+Mobile Phone              
+      ↓                   
 Camera / Recognition Input
-      ↓
-Remote or Cloud Service
-      ↓
-EchoHands Models
-      ↓
-Prediction
-      ↓
-Result Returned to Phone
-```
+      ↓                   
+Remote or Cloud Service   
+      ↓                   
+EchoHands Models          
+      ↓                   
+Prediction                
+      ↓                   
+Result Returned to Phone  
+ ```                         
 
 This could make the mobile application lighter and make model updates easier to manage centrally.
 

@@ -412,7 +412,7 @@ class StartupUI:
         banner_path = (
             Path(__file__).resolve().parents[2]
             / "Assets"
-            / "banner.png"
+            / "Startup Startup banner.png"
         )
 
         if not banner_path.exists():
