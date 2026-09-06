@@ -35,9 +35,7 @@ The Application currently focuses on American Sign Language (ASL) and serves as 
 
 Application is recommended to run with:
 
-```text
-Python 3.10
-```
+`Python 3.10`
 
 Using Python 3.10 helps maintain compatibility with the dependencies used by the Application
 
@@ -50,10 +48,10 @@ Open **Command Prompt** or **PowerShell** and run:
 
 ```bash
 git clone https://github.com/shivanshu43/Echohands.git
-cd EchoHands
+cd Echohands
 ```
 
-> **Note:** The repository directory created by Git is `EchoHands_Alpha-build`. Use the directory name created on your system if it differs.
+> **Note:** The repository directory created by Git is `EchoHands`. Use the directory name created on your system if it differs.
 
 **Expected result:**
 
@@ -61,9 +59,9 @@ The repository is downloaded and the terminal moves into the Alpha Build project
 
 Your prompt should look similar to:
 
-```text
-E:\EchoHands_Alpha-build>
-```
+<mark>
+E:\EchoHands>
+</mark>
 
 ---
 
@@ -86,10 +84,10 @@ The command normally produces no output and creates a new `venv` folder inside t
 
 The project should now contain:
 
-```text
+<mark>
 EchoHands/
 └── venv/
-```
+</mark>
 
 ---
 
@@ -108,9 +106,9 @@ venv\Scripts\activate
 
 `(venv)` appears at the beginning of the command prompt:
 
-```text
+<mark>
 (venv) E:\EchoHands>
-```
+</mark>
 
 ---
 
@@ -122,12 +120,15 @@ Confirm that the virtual environment is using the expected Python interpreter:
 ```bash
 where python
 ```
-
+Output should look something like ;
+<p align="center">
+  <img src="Assets\Readme img\where python.png" alt="EchoHands Banner" width="80%">
+</p>
 The first path should point to the project's virtual environment, similar to:
 
-```text
+<mark>
 E:\EchoHands\venv\Scripts\python.exe
-```
+</mark>
 
 Then verify the Python version:
 
@@ -137,150 +138,147 @@ python --version
 
 **Expected result:**
 
-```text
+<mark>
 Python 3.10.x
-```
+</mark>
 
 ---
 
 
-### Virtual Environment Troubleshooting
-
-If you face an error related to the virtual environment, use the following recovery procedure.
-
-#### Step 1 — Deactivate the Current Environment
-
-Run:
-
-```bash
-deactivate
-```
-
-You should go from:
-
-```text
-(venv) E:\EchoHands_Alpha-build>
-```
-
-to:
-
-```text
-E:\EchoHands_Alpha-build>
-```
-
----
-#### Step 2 — Delete the Incorrect `venv`
-
-Run:
-
-```bash
-rmdir /s /q venv
-```
-
-This removes the incorrectly created virtual environment.
-
----
-#### Step 3 — Check Whether Python 3.10 Is Installed
-
-Run:
-
-```bash
-py -0p
-```
-
-You should see something similar to:
-
-```text
-Installed Pythons found by py Launcher for Windows
- -3.13-64 ...
- -3.10-64 C:\...\Python310\python.exe
-```
-
-**We specifically need to see a 3.10 entry.**
-
-You can also directly test:
-
-```bash
-py -3.10 --version
-```
-
-The expected result is:
-
-```text
-Python 3.10.x
-```
-
-
-### ► If `py -3.10 --version` Succeeds
-
-Perfect. Now create the environment **only with this command**:
-
-```bash
-py -3.10 -m venv venv
-```
-
-> **Important:** Do not run `python -m venv venv` after this command. Doing so may recreate the environment using another installed Python version, such as Python 3.13.
-
-Then activate it:
-
-```bash
-venv\Scripts\activate
-```
-
-Now verify:
-
-```bash
-python --version
-```
-
-You should get:
-
-```text
-Python 3.10.x
-```
-
-Then:
-
-```bash
-where python
-```
-
-The first result should be:
-
-```text
-E:\EchoHands_Alpha-build\venv\Scripts\python.exe
-```
-
-So the final verification should look approximately like:
-
-```text
-(venv) E:\EchoHands_Alpha-build>python --version
-Python 3.10.x
-
-(venv) E:\EchoHands_Alpha-build>where python
-E:\EchoHands_Alpha-build\venv\Scripts\python.exe
-...
-```
-
----
-
-### ► If `py -3.10 --version` Fails
-
-If you get something like:
-
-```text
-Requested Python version (3.10) is not installed
-```
-
-then **Python 3.10 is not installed on your machine**, which is why another installed version such as Python 3.13 may be used.
-
-In that case, do not create another `venv` yet.
-
-Install **Python 3.10.x** first, then come back to:
-
-```bash
-py -3.10 -m venv venv
-```
+>### If you face an error related to the virtual environment, use the following recovery procedure.
+>
+>#### Step 1 — Deactivate the Current Environment
+>
+>Run:
+>
+>```bash
+>deactivate
+>```
+>
+>You should go from:
+>
+><mark>
+>(venv) E:\EchoHands>
+></mark>
+>
+>to:
+>
+><mark>
+>E:\EchoHands>
+</mark>
+>
+>---
+>#### Step 2 — Delete the Incorrect `venv`
+>
+>Run:
+>
+>```bash
+>rmdir /s /q venv
+>```
+>
+>This removes the incorrectly created virtual environment.
+>
+>---
+>#### Step 3 — Check Whether Python 3.10 Is Installed
+>
+>Run:
+>
+>```bash
+>py -0p
+>```
+>
+>You should see something similar to:
+>
+><mark>
+>Installed Pythons found by py Launcher for Windows
+> -3.13-64 ...
+> -3.10-64 C:\...\Python310\python.exe
+></mark>
+>
+>**We specifically need to see a 3.10 entry.**
+>
+>You can also directly test:
+>
+>```bash
+>py -3.10 --version
+>```
+>
+>The expected result is:
+>
+><mark>
+>Python 3.10.x
+></mark>
+>
+>
+>### ► If `py -3.10 --version` Succeeds
+>
+>Perfect. Now create the environment **only with this command**:
+>
+>```bash
+>py -3.10 -m venv venv
+>```
+>
+>
+>Then activate it:
+>
+>```bash
+>venv\Scripts\activate
+>```
+>
+>Now verify:
+>
+>```bash
+>python --version
+>```
+>
+>You should get:
+>
+><mark>
+>Python 3.10.x
+></mark>
+>
+>Then:
+>
+>```bash
+>where python
+>```
+>
+>The first result should be:
+>
+><mark>
+>E:\EchoHands_Alpha-build\venv\Scripts\python.exe
+></mark>
+>
+>So the final verification should look approximately like:
+>
+><mark>
+>(venv) E:\EchoHands_Alpha-build>python --version
+>Python 3.10.x
+>
+>(venv) E:\EchoHands_Alpha-build>where python
+>E:\EchoHands_Alpha-build\venv\Scripts\python.exe
+>...
+></mark>
+>
+>---
+>
+>### ► If `py -3.10 --version` Fails
+>
+>If you get something like:
+>
+><mark>
+>Requested Python version (3.10) is not installed
+></mark>
+>
+>then **Python 3.10 is not installed on your machine**, which is why another installed version such as Python 3.13 may be used.
+>
+>In that case, do not create another `venv` yet.
+>
+>Install **Python 3.10.x** first, then come back to:
+>
+>```bash
+>py -3.10 -m venv venv
+>```
 
 ---
 
@@ -318,13 +316,13 @@ pip downloads and installs the required packages.
 
 The installation should finish with output similar to:
 
-```text
+```
 Successfully installed ...
 ```
 
 The exact dependencies and versions are defined in:
 
-```text
+```
 requirements.txt
 ```
 
@@ -336,7 +334,7 @@ Unlike the Alpha Build, the Beta Build does not require the AI model files to be
 Instead, Beta uses a Model Configuration File to determine which tested model version should be used by the application.
 Before launching EchoHands, make sure the following file is present in the project directory:
 
-```text
+```
 EchoHands/
 ├── model_manifest.json
 ├── requirements.txt
@@ -470,17 +468,6 @@ If you find one, please help me catch those bugs playing hide-and-seek
 
 ---
 
-
-## 📦 Model Configuration File
-
-Application uses a **Model Configuration File** to Setup latest released models for the application.
-
-Whenever a new model version is released, make sure the latest Model Configuration File is present in your EchoHands application directory before launching the application
-
-**Be sure to frequently check the GitHub repository to ensure you have the latest version of this file**
-
----
-
 ## 📦 Model Configuration File
 
 EchoHands uses a Model Configuration File to Setup latest released models for the application
@@ -520,7 +507,7 @@ The goal is not to assume that an ASL-trained model can directly recognize ISL. 
 
 Conceptually:
 
-```text
+```
 
 EchoHands Recognition Pipeline
 
@@ -545,7 +532,7 @@ The longer-term idea is to support a cloud or remote architecture where model in
 
 Instead of requiring every mobile device to run the complete recognition stack locally:
 
-```text
+```
 Mobile Phone
       ↓
 Camera / Recognition Input
