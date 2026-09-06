@@ -11,8 +11,9 @@ The Application currently focuses on American Sign Language (ASL) and serves as 
 
 <div align="center">
 
-> 📦 **[Get the Latest Model Configuration File →](#-model-configuration-file)**  
-> Keep your Model Configuration File up to date for the latest released models (Download the file and paste it into the application root directory. If prompted, select "Replace" to overwrite the existing file)
+📦 **[Get the Latest Model Configuration File →](#-model-configuration-file)**  
+ Keep your Model Configuration File up to date for the latest released models 
+ (Download the file and paste it into the application root directory. If prompted, select "Replace" to overwrite the existing file)
 
 </div>
 
@@ -28,11 +29,7 @@ The Application currently focuses on American Sign Language (ASL) and serves as 
 - Recognition Control: Check and filter model predictions before accepting them, ensuring a gesture is recognized only when it is reliable and preventing the same held gesture from being added repeatedly.
 - Text Output: Build recognized signs into digital text through the application's text-building module
 
-**Working sequence:**
-
-OpenCV → MediaPipe → NumPy → Recognition Models → EchoHands Recognition Modules → Digital Text
-
---
+---
 
 # Installation & Requirements
 
@@ -212,9 +209,8 @@ The expected result is:
 Python 3.10.x
 ```
 
----
 
-### If `py -3.10 --version` Succeeds
+### ► If `py -3.10 --version` Succeeds
 
 Perfect. Now create the environment **only with this command**:
 
@@ -267,7 +263,7 @@ E:\EchoHands_Alpha-build\venv\Scripts\python.exe
 
 ---
 
-### If `py -3.10 --version` Fails
+### ► If `py -3.10 --version` Fails
 
 If you get something like:
 
@@ -383,7 +379,7 @@ For information about supported signs, keyboard controls, recognition behavior, 
 <div align="center" style="border: 1px solid #d0d7de; border-radius: 8px; padding: 20px;">
 
 <a href="EchoHands_User_Manual.pdf">
-  <img src="Assets/user_manual_icon.png" width="80">
+  <img src="Assets/user_manual.png" width="80">
 </a>
 
 <br><br>
@@ -451,26 +447,19 @@ Small changes in hand position or finger configuration can significantly affect 
 <br>
 
 
-<table>
-<tr>
-<td width="78%" valign="middle">
+<div align="left" style="border: 1px dashed #8b949e; border-radius: 10px; padding: 18px 20px;">
 
-**Faced an issue, or did something not quite work as expected?**  
-I’m really sorry about that — thodi bohot mistakes toh reh hi jaati hain, But I’ll surely work on fixing them! If you find one, please help me catch those little bugs playing hide-and-seek.
+<img src="Assets/bug_helper.png" width="125" align="right">
+
+**Faced an issue, or did something not quite work as expected?**
+
+I’m really sorry about that — thodi bohot mistakes toh reh hi jaati hain 🥺. I’ll surely work on fixing them! If you find one, please help me catch those little bugs playing hide-and-seek. 👉👈
 
 <br>
 
 **[🐛 Report a Bug](https://github.com/shivanshu43/Echohands/issues)** &nbsp;·&nbsp; **[💬 Join the Discussion](https://github.com/shivanshu43/Echohands/discussions)**
 
-</td>
-
-<td width="22%" valign="bottom" align="center">
-
-<img src="Assets/bug_helper.png" width="150">
-
-</td>
-</tr>
-</table>
+</div>
 
 ---
 
@@ -559,20 +548,10 @@ The exact architecture is a future development goal and would require further wo
 
 ---
 
-# 👤 Author
+## 👤 Author
 
 **Shivanshu Khode**
 
-<p align="center">
-  <a href="mailto:shivanshukhode043@gmail.com">
-    <img src="https://cdn.simpleicons.org/gmail" alt="Email" width="35">
-  </a>
-  &nbsp;&nbsp;
-  <a href="https://www.linkedin.com/in/shivanshu-khode-a85343379">
-    <img src="https://cdn.simpleicons.org/linkedin" alt="LinkedIn" width="35">
-  </a>
-  &nbsp;&nbsp;
-  <a href="https://www.instagram.com/shivanshu_khode/?hl=en">
-    <img src="https://cdn.simpleicons.org/instagram" alt="Instagram" width="35">
-  </a>
-</p>
+[<img src="https://cdn.simpleicons.org/gmail" width="40" alt="Email">](mailto:shivanshukhode043@gmail.com)&nbsp;&nbsp;
+[<img src="https://img.icons8.com/ios-filled/50/0A66C2/linkedin.png" width="40" alt="LinkedIn">](https://www.linkedin.com/in/shivanshu-khode-a85343379)&nbsp;&nbsp;
+[<img src="https://cdn.simpleicons.org/instagram" width="40" alt="Instagram">](https://www.instagram.com/shivanshu_khode/?hl=en)
