@@ -453,7 +453,8 @@ Small changes in hand position or finger configuration can significantly affect 
 
 **Faced an issue, or did something not quite work as expected?**
 
-I’m really sorry about that — thodi bohot mistakes toh reh hi jaati hain 🥺. I’ll surely work on fixing them! If you find one, please help me catch those little bugs playing hide-and-seek. 👉👈
+I’m really sorry about that — thodi bohot mistakes toh reh hi jaati hain,
+ I’ll surely work on fixing them! If you find one, please help me catch those little bugs playing hide-and-seek
 
 <br>
 
