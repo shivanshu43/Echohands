@@ -45,6 +45,7 @@ Using Python 3.10 helps maintain compatibility with the dependencies used by the
 
 ---
 
+
 ## 1. Clone the Repository
 
 Open **Command Prompt** or **PowerShell** and run:
@@ -67,6 +68,7 @@ E:\EchoHands_Alpha-build>
 ```
 
 ---
+
 
 ## 2. Create a Virtual Environment
 
@@ -93,6 +95,7 @@ EchoHands/
 
 ---
 
+
 ## 3. Activate the Virtual Environment
 
 ### Windows Command Prompt
@@ -112,6 +115,7 @@ venv\Scripts\activate
 ```
 
 ---
+
 
 ## 4. Verify Python
 
@@ -141,6 +145,7 @@ Python 3.10.x
 
 ---
 
+
 ### Virtual Environment Troubleshooting
 
 If you face an error related to the virtual environment, use the following recovery procedure.
@@ -166,7 +171,6 @@ E:\EchoHands_Alpha-build>
 ```
 
 ---
-
 #### Step 2 — Delete the Incorrect `venv`
 
 Run:
@@ -178,7 +182,6 @@ rmdir /s /q venv
 This removes the incorrectly created virtual environment.
 
 ---
-
 #### Step 3 — Check Whether Python 3.10 Is Installed
 
 Run:
@@ -283,6 +286,7 @@ py -3.10 -m venv venv
 
 ---
 
+
 ## 5. Upgrade pip
 
 Run:
@@ -300,6 +304,7 @@ Successfully installed pip-...
 ```
 
 ---
+
 
 ## 6. Install Dependencies
 
@@ -327,6 +332,7 @@ requirements.txt
 
 ---
 
+
 ## 7. Verify the Model Configuration File
 Unlike the Alpha Build, the Beta Build does not require the AI model files to be stored directly inside the project directory.
 Instead, Beta uses a Model Configuration File to determine which tested model version should be used by the application.
@@ -350,6 +356,7 @@ The Model Configuration File contains the information required by EchoHands to l
 
 ---
 
+
 ## 8. Launch EchoHands
 Once the virtual environment is activated and the dependencies are installed, run:
 
@@ -364,6 +371,8 @@ On startup, EchoHands checks the Model Configuration File and prepares the requi
 * If the models are not available locally or a newer model version is required, EchoHands retrieves the appropriate model package and stores it in the local model cache before starting recognition.
 
 >**Note:** The first launch may take longer because EchoHands may need to prepare the required model files. Later launches can reuse the locally cached models when they are still valid.
+
+---
 
 
 ## 9. Start Using EchoHands
@@ -382,9 +391,7 @@ For information about supported signs, keyboard controls, recognition behavior, 
   <img src="Assets/user_manual.png" width="80">
 </a>
 
-<br><br>
-
-### [Open EchoHands User Manual](EchoHands_User_Manual.pdf)
+### [Open EchoHands User Manual](user_Manual.pdf)
 
 Click the icon or the link above to open the complete User Manual.
 
@@ -453,8 +460,9 @@ Small changes in hand position or finger configuration can significantly affect 
 
 **Faced an issue, or did something not quite work as expected?**
 
-I’m really sorry about that — thodi bohot mistakes toh reh hi jaati hain,
- I’ll surely work on fixing them! If you find one, please help me catch those little bugs playing hide-and-seek
+I’m really sorry about that — thodi bohot mistakes toh reh hi jaati hain,,
+I’ll surely work on fixing them!
+If you find one, please help me catch those bugs playing hide-and-seek
 
 <br>
 
@@ -473,11 +481,21 @@ Whenever a new model version is released, make sure the latest Model Configurati
 
 **Be sure to frequently check the GitHub repository to ensure you have the latest version of this file**
 
+---
+
+## 📦 Model Configuration File
+
+EchoHands uses a Model Configuration File to Setup latest released models for the application
+
+Whenever a new model version is released, make sure the latest Model Configuration File is present in your EchoHands application directory before launching the application
+
+**Be sure to frequently check the GitHub repository to ensure you have the latest version of this file.**
+
 <div align="center">
 
 ### ⬇️ Download Latest Model Configuration File
 
-<a href="https://raw.githubusercontent.com/shivanshu43/Echohands/main/model_manifest.json">
+<a href="https://github.com/shivanshu43/Echohands/raw/refs/heads/main/model_manifest.json" download="model_manifest.json">
   <img src="Assets/model_config_icon.png" width="100">
 </a>
 
