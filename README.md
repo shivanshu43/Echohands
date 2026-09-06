@@ -2,9 +2,7 @@
   <img src="Assets/banner.png" alt="EchoHands Banner" width="100%">
 </p>
 
-# EchoHands
-
-EchoHands is a modular AI-powered framework for real-time sign language recognition using a webcam. It provides a structured pipeline for detecting hand gestures, processing hand landmarks, recognizing signs, and converting them into digital text
+EchoHands👋,, It is a modular AI-powered framework for real-time sign language recognition using a webcam. It provides a structured pipeline for detecting hand gestures, processing hand landmarks, recognizing signs, and converting them into digital text
 The Application currently focuses on American Sign Language (ASL) and serves as a working foundation for further development, experimentation, and adaptation to other sign languages and recognition systems
 
 ---
